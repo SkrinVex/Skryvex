@@ -4,12 +4,7 @@ class UserModel {
   final String name;
   final String? avatarUrl;
 
-  const UserModel({
-    required this.id,
-    required this.email,
-    required this.name,
-    this.avatarUrl,
-  });
+  const UserModel({required this.id, required this.email, required this.name, this.avatarUrl});
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
         id: j['id'] as int,
@@ -59,6 +54,9 @@ class MessageModel {
   final String? senderAvatar;
   final String text;
   final DateTime createdAt;
+  final int? replyToId;
+  final String? replyText;
+  final String? replySenderName;
 
   const MessageModel({
     required this.id,
@@ -68,6 +66,9 @@ class MessageModel {
     this.senderAvatar,
     required this.text,
     required this.createdAt,
+    this.replyToId,
+    this.replyText,
+    this.replySenderName,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> j) => MessageModel(
@@ -78,5 +79,8 @@ class MessageModel {
         senderAvatar: j['sender_avatar'] as String?,
         text: j['text'] as String,
         createdAt: DateTime.parse(j['created_at'] as String),
+        replyToId: j['reply_to_id'] as int?,
+        replyText: j['reply_text'] as String?,
+        replySenderName: j['reply_sender_name'] as String?,
       );
 }

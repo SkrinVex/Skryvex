@@ -59,6 +59,18 @@ class AppTheme {
       style: TextButton.styleFrom(foregroundColor: orange),
     ),
     dividerColor: divider,
+    navigationBarTheme: NavigationBarThemeData(
+      backgroundColor: surface,
+      indicatorColor: orange.withValues(alpha: 0.15),
+      labelTextStyle: WidgetStateProperty.resolveWith((states) {
+        final color = states.contains(WidgetState.selected) ? orange : textSecondary;
+        return TextStyle(color: color, fontSize: 12);
+      }),
+      iconTheme: WidgetStateProperty.resolveWith((states) {
+        final color = states.contains(WidgetState.selected) ? orange : textSecondary;
+        return IconThemeData(color: color);
+      }),
+    ),
     textTheme: const TextTheme(
       bodyLarge: TextStyle(color: textPrimary),
       bodyMedium: TextStyle(color: textPrimary),

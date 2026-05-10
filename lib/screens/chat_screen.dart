@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
@@ -21,10 +22,14 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> {
   final _msgCtrl = TextEditingController();
   final _scrollCtrl = ScrollController();
+  final Map<int, GlobalKey> _msgKeys = {};
+
   final List<MessageModel> _messages = [];
   WebSocketChannel? _ws;
   int? _myId;
   bool _loading = true;
+  MessageModel? _replyTo;
+  int? _highlightedId;
 
   @override
   void initState() {
@@ -39,13 +44,9 @@ class _ChatScreenState extends State<ChatScreen> {
     if (userJson != null) {
       _myId = (jsonDecode(userJson) as Map<String, dynamic>)['id'] as int?;
     }
-
     await _loadMessages();
-
     if (token != null) {
-      _ws = WebSocketChannel.connect(
-        Uri.parse('${ApiService.wsBase}?token=$token'),
-      );
+      _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
       _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': widget.chatId}));
       _ws!.stream.listen(_onWsMessage, onError: (_) {}, onDone: () {});
     }
@@ -54,9 +55,13 @@ class _ChatScreenState extends State<ChatScreen> {
   Future<void> _loadMessages() async {
     try {
       final data = await ApiService.get('/chats/${widget.chatId}/messages') as List<dynamic>;
+      final msgs = data.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)).toList();
       setState(() {
         _messages.clear();
-        _messages.addAll(data.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)));
+        _messages.addAll(msgs);
+        for (final m in msgs) {
+          _msgKeys[m.id] = GlobalKey();
+        }
         _loading = false;
       });
       _scrollToBottom();
@@ -70,7 +75,10 @@ class _ChatScreenState extends State<ChatScreen> {
     if (msg['type'] == 'message') {
       final m = MessageModel.fromJson(msg);
       if (m.chatId == widget.chatId) {
-        setState(() => _messages.add(m));
+        setState(() {
+          _messages.add(m);
+          _msgKeys[m.id] = GlobalKey();
+        });
         _scrollToBottom();
       }
     }
@@ -81,18 +89,37 @@ class _ChatScreenState extends State<ChatScreen> {
       if (_scrollCtrl.hasClients) {
         _scrollCtrl.animateTo(
           _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 200),
+          duration: const Duration(milliseconds: 250),
           curve: Curves.easeOut,
         );
       }
     });
   }
 
+  Future<void> _scrollToMessage(int messageId) async {
+    final key = _msgKeys[messageId];
+    if (key?.currentContext == null) return;
+    await Scrollable.ensureVisible(
+      key!.currentContext!,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOut,
+      alignment: 0.3,
+    );
+    setState(() => _highlightedId = messageId);
+    await Future.delayed(const Duration(milliseconds: 1200));
+    if (mounted) setState(() => _highlightedId = null);
+  }
+
   void _send() {
     final text = _msgCtrl.text.trim();
     if (text.isEmpty || _ws == null) return;
-    _ws!.sink.add(jsonEncode({'type': 'message', 'text': text}));
+    _ws!.sink.add(jsonEncode({
+      'type': 'message',
+      'text': text,
+      if (_replyTo != null) 'reply_to_id': _replyTo!.id,
+    }));
     _msgCtrl.clear();
+    setState(() => _replyTo = null);
   }
 
   @override
@@ -120,22 +147,35 @@ class _ChatScreenState extends State<ChatScreen> {
                 ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
                 : _messages.isEmpty
                     ? Center(
-                        child: Text(
-                          'Начните переписку',
-                          style: TextStyle(color: AppTheme.textSecondary),
-                        ),
-                      )
+                        child: Text('Начните переписку',
+                            style: TextStyle(color: AppTheme.textSecondary)))
                     : ListView.builder(
                         controller: _scrollCtrl,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         itemCount: _messages.length,
-                        itemBuilder: (_, i) => _MessageBubble(
-                          message: _messages[i],
-                          isMe: _messages[i].senderId == _myId,
-                          showDate: i == 0 ||
-                              !_sameDay(_messages[i - 1].createdAt, _messages[i].createdAt),
-                        ),
+                        itemBuilder: (_, i) {
+                          final msg = _messages[i];
+                          final showDate = i == 0 ||
+                              !_sameDay(_messages[i - 1].createdAt, msg.createdAt);
+                          return _SwipeableMessage(
+                            key: _msgKeys[msg.id],
+                            message: msg,
+                            isMe: msg.senderId == _myId,
+                            showDate: showDate,
+                            isHighlighted: _highlightedId == msg.id,
+                            onReply: () => setState(() => _replyTo = msg),
+                            onTapReply: msg.replyToId != null
+                                ? () => _scrollToMessage(msg.replyToId!)
+                                : null,
+                          );
+                        },
                       ),
+          ),
+          if (_replyTo != null) _ReplyPreview(
+            message: _replyTo!,
+            isMe: _replyTo!.senderId == _myId,
+            onCancel: () => setState(() => _replyTo = null),
+            onTap: () => _scrollToMessage(_replyTo!.id),
           ),
           _InputBar(controller: _msgCtrl, onSend: _send),
         ],
@@ -147,68 +187,207 @@ class _ChatScreenState extends State<ChatScreen> {
       a.year == b.year && a.month == b.month && a.day == b.day;
 }
 
-class _MessageBubble extends StatelessWidget {
+// ── Swipeable message ──────────────────────────────────────────────────────
+
+class _SwipeableMessage extends StatefulWidget {
   final MessageModel message;
   final bool isMe;
   final bool showDate;
+  final bool isHighlighted;
+  final VoidCallback onReply;
+  final VoidCallback? onTapReply;
 
-  const _MessageBubble({
+  const _SwipeableMessage({
+    super.key,
     required this.message,
     required this.isMe,
     required this.showDate,
+    required this.isHighlighted,
+    required this.onReply,
+    this.onTapReply,
   });
 
   @override
+  State<_SwipeableMessage> createState() => _SwipeableMessageState();
+}
+
+class _SwipeableMessageState extends State<_SwipeableMessage>
+    with SingleTickerProviderStateMixin {
+  double _dragX = 0;
+  bool _triggered = false;
+  late AnimationController _snapCtrl;
+  late Animation<double> _snapAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _snapCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
+    _snapAnim = Tween<double>(begin: 0, end: 0).animate(_snapCtrl);
+    _snapCtrl.addListener(() => setState(() => _dragX = _snapAnim.value));
+  }
+
+  @override
+  void dispose() {
+    _snapCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    // Свайп вправо для своих, влево для чужих — оба направления работают
+    final delta = widget.isMe ? -d.delta.dx : d.delta.dx;
+    if (delta < 0) return; // только в одну сторону
+    setState(() {
+      _dragX = (_dragX + d.delta.dx).clamp(widget.isMe ? -60.0 : 0.0, widget.isMe ? 0.0 : 60.0);
+    });
+    if (_dragX.abs() >= 50 && !_triggered) {
+      _triggered = true;
+      HapticFeedback.lightImpact();
+      widget.onReply();
+    }
+  }
+
+  void _onDragEnd(DragEndDetails _) {
+    _triggered = false;
+    _snapAnim = Tween<double>(begin: _dragX, end: 0).animate(
+      CurvedAnimation(parent: _snapCtrl, curve: Curves.easeOut),
+    );
+    _snapCtrl.forward(from: 0);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final time = DateFormat('HH:mm').format(message.createdAt.toLocal());
+    final time = DateFormat('HH:mm').format(widget.message.createdAt.toLocal());
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (showDate)
+        if (widget.showDate)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Center(
-              child: Text(
-                _formatDate(message.createdAt),
-                style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
-              ),
+              child: Text(_formatDate(widget.message.createdAt),
+                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
             ),
           ),
-        Align(
-          alignment: isMe ? Alignment.centerRight : Alignment.centerLeft,
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: MediaQuery.of(context).size.width * 0.72,
-            ),
-            margin: const EdgeInsets.only(bottom: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
-            decoration: BoxDecoration(
-              color: isMe ? AppTheme.orangeDim : AppTheme.surfaceVariant,
-              borderRadius: BorderRadius.only(
-                topLeft: const Radius.circular(16),
-                topRight: const Radius.circular(16),
-                bottomLeft: Radius.circular(isMe ? 16 : 4),
-                bottomRight: Radius.circular(isMe ? 4 : 16),
-              ),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.end,
+        GestureDetector(
+          onHorizontalDragUpdate: _onDragUpdate,
+          onHorizontalDragEnd: _onDragEnd,
+          child: Transform.translate(
+            offset: Offset(_dragX, 0),
+            child: Stack(
               children: [
-                Text(
-                  message.text,
-                  style: TextStyle(
-                    color: isMe ? AppTheme.bg : AppTheme.textPrimary,
-                    fontSize: 15,
+                // Reply arrow hint
+                Positioned(
+                  left: widget.isMe ? null : 0,
+                  right: widget.isMe ? 0 : null,
+                  top: 0,
+                  bottom: 0,
+                  child: AnimatedOpacity(
+                    opacity: (_dragX.abs() / 50).clamp(0.0, 1.0),
+                    duration: const Duration(milliseconds: 50),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Icon(
+                        Icons.reply_rounded,
+                        color: AppTheme.orange,
+                        size: 20,
+                      ),
+                    ),
                   ),
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  time,
-                  style: TextStyle(
-                    color: isMe
-                        ? AppTheme.bg.withValues(alpha: 0.6)
-                        : AppTheme.textSecondary,
-                    fontSize: 11,
+                Align(
+                  alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 200),
+                    constraints: BoxConstraints(
+                        maxWidth: MediaQuery.of(context).size.width * 0.72),
+                    margin: const EdgeInsets.only(bottom: 4),
+                    decoration: BoxDecoration(
+                      color: widget.isHighlighted
+                          ? AppTheme.orange.withValues(alpha: 0.3)
+                          : widget.isMe
+                              ? AppTheme.orangeDim
+                              : AppTheme.surfaceVariant,
+                      borderRadius: BorderRadius.only(
+                        topLeft: const Radius.circular(16),
+                        topRight: const Radius.circular(16),
+                        bottomLeft: Radius.circular(widget.isMe ? 16 : 4),
+                        bottomRight: Radius.circular(widget.isMe ? 4 : 16),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Reply preview inside bubble
+                        if (widget.message.replyToId != null)
+                          GestureDetector(
+                            onTap: widget.onTapReply,
+                            child: Container(
+                              margin: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: widget.isMe
+                                    ? Colors.black.withValues(alpha: 0.15)
+                                    : AppTheme.surface,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border(
+                                  left: BorderSide(color: AppTheme.orange, width: 3),
+                                ),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    widget.message.replySenderName ?? '',
+                                    style: TextStyle(
+                                      color: AppTheme.orange,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    widget.message.replyText ?? '',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: widget.isMe
+                                          ? AppTheme.bg.withValues(alpha: 0.7)
+                                          : AppTheme.textSecondary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                widget.message.text,
+                                style: TextStyle(
+                                  color: widget.isMe ? AppTheme.bg : AppTheme.textPrimary,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              Text(
+                                time,
+                                style: TextStyle(
+                                  color: widget.isMe
+                                      ? AppTheme.bg.withValues(alpha: 0.6)
+                                      : AppTheme.textSecondary,
+                                  fontSize: 11,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],
@@ -226,12 +405,70 @@ class _MessageBubble extends StatelessWidget {
       return 'Сегодня';
     }
     final yesterday = now.subtract(const Duration(days: 1));
-    if (local.year == yesterday.year && local.month == yesterday.month && local.day == yesterday.day) {
-      return 'Вчера';
-    }
+    if (local.year == yesterday.year &&
+        local.month == yesterday.month &&
+        local.day == yesterday.day) { return 'Вчера'; }
     return DateFormat('d MMMM', 'ru').format(local);
   }
 }
+
+// ── Reply preview bar ──────────────────────────────────────────────────────
+
+class _ReplyPreview extends StatelessWidget {
+  final MessageModel message;
+  final bool isMe;
+  final VoidCallback onCancel;
+  final VoidCallback onTap;
+
+  const _ReplyPreview({
+    required this.message,
+    required this.isMe,
+    required this.onCancel,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        color: AppTheme.surface,
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
+        child: Row(
+          children: [
+            Container(width: 3, height: 36, color: AppTheme.orange,
+                margin: const EdgeInsets.only(right: 10)),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isMe ? 'Вы' : message.senderName,
+                    style: const TextStyle(
+                        color: AppTheme.orange, fontSize: 12, fontWeight: FontWeight.w600),
+                  ),
+                  Text(
+                    message.text,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close, color: AppTheme.textSecondary, size: 20),
+              onPressed: onCancel,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Input bar ──────────────────────────────────────────────────────────────
 
 class _InputBar extends StatelessWidget {
   final TextEditingController controller;
@@ -255,11 +492,7 @@ class _InputBar extends StatelessWidget {
                 maxLines: 4,
                 minLines: 1,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  hintText: 'Сообщение...',
-                  contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                ),
-                onSubmitted: (_) => onSend(),
+                decoration: const InputDecoration(hintText: 'Сообщение...'),
               ),
             ),
             const SizedBox(width: 8),
@@ -269,9 +502,7 @@ class _InputBar extends StatelessWidget {
                 width: 44,
                 height: 44,
                 decoration: const BoxDecoration(
-                  color: AppTheme.orange,
-                  shape: BoxShape.circle,
-                ),
+                    color: AppTheme.orange, shape: BoxShape.circle),
                 child: const Icon(Icons.send_rounded, color: AppTheme.bg, size: 20),
               ),
             ),

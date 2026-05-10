@@ -14,17 +14,67 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  int _tab = 0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: _tab,
+        children: const [
+          _ChatsTab(),
+          _CommunityTab(),
+          _SettingsTab(),
+        ],
+      ),
+      bottomNavigationBar: NavigationBar(
+        backgroundColor: AppTheme.surface,
+        indicatorColor: AppTheme.orange.withValues(alpha: 0.15),
+        selectedIndex: _tab,
+        onDestinationSelected: (i) => setState(() => _tab = i),
+        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble, color: AppTheme.orange),
+            label: 'Чаты',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore, color: AppTheme.orange),
+            label: 'Сообщество',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.settings_outlined),
+            selectedIcon: Icon(Icons.settings, color: AppTheme.orange),
+            label: 'Настройки',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Chats tab ──────────────────────────────────────────────────────────────
+
+class _ChatsTab extends StatefulWidget {
+  const _ChatsTab();
+
+  @override
+  State<_ChatsTab> createState() => _ChatsTabState();
+}
+
+class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
   List<ChatModel> _chats = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    await _loadChats();
+    _loadChats();
   }
 
   Future<void> _loadChats() async {
@@ -32,21 +82,13 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       final data = await ApiService.get('/chats') as List<dynamic>;
       setState(() => _chats = data.map((e) => ChatModel.fromJson(e as Map<String, dynamic>)).toList());
-    } catch (_) {
-      // ignore
-    } finally {
-      if (mounted) setState(() => _loading = false);
-    }
-  }
-
-  Future<void> _logout() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.clear();
-    if (mounted) Navigator.pushReplacementNamed(context, '/login');
+    } catch (_) {}
+    finally { if (mounted) setState(() => _loading = false); }
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       appBar: AppBar(
         title: const Text('Skryvex'),
@@ -54,34 +96,24 @@ class _HomeScreenState extends State<HomeScreen> {
           IconButton(
             icon: const Icon(Icons.search, color: AppTheme.textSecondary),
             onPressed: () async {
-              await Navigator.push<int>(
-                context,
-                MaterialPageRoute(builder: (_) => const SearchScreen()),
-              );
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => const SearchScreen()));
               _loadChats();
             },
-          ),
-          IconButton(
-            icon: const Icon(Icons.logout, color: AppTheme.textSecondary),
-            onPressed: _logout,
           ),
         ],
       ),
       body: _loading
           ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
           : _chats.isEmpty
-              ? _emptyState()
+              ? _empty()
               : RefreshIndicator(
                   color: AppTheme.orange,
                   backgroundColor: AppTheme.surface,
                   onRefresh: _loadChats,
                   child: ListView.separated(
                     itemCount: _chats.length,
-                    separatorBuilder: (context, index) => const Divider(
-                      height: 1,
-                      indent: 72,
-                      color: AppTheme.divider,
-                    ),
+                    separatorBuilder: (context, index) =>
+                        const Divider(height: 1, indent: 72, color: AppTheme.divider),
                     itemBuilder: (_, i) => _ChatTile(
                       chat: _chats[i],
                       onTap: () async {
@@ -102,29 +134,25 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _emptyState() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.chat_bubble_outline, size: 56, color: AppTheme.textSecondary.withValues(alpha: 0.4)),
-          const SizedBox(height: 16),
-          const Text('Нет чатов', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
-          const SizedBox(height: 8),
-          Text(
-            'Найдите пользователя через поиск',
-            style: TextStyle(color: AppTheme.textSecondary.withValues(alpha: 0.6), fontSize: 13),
-          ),
-        ],
-      ),
-    );
-  }
+  Widget _empty() => Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.chat_bubble_outline,
+                size: 56, color: AppTheme.textSecondary.withValues(alpha: 0.4)),
+            const SizedBox(height: 16),
+            const Text('Нет чатов', style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
+            const SizedBox(height: 8),
+            Text('Найдите пользователя через поиск',
+                style: TextStyle(color: AppTheme.textSecondary.withValues(alpha: 0.6), fontSize: 13)),
+          ],
+        ),
+      );
 }
 
 class _ChatTile extends StatelessWidget {
   final ChatModel chat;
   final VoidCallback onTap;
-
   const _ChatTile({required this.chat, required this.onTap});
 
   @override
@@ -134,35 +162,30 @@ class _ChatTile extends StatelessWidget {
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: _Avatar(name: chat.partnerName, url: chat.partnerAvatar),
-      title: Text(
-        chat.partnerName,
-        style: TextStyle(
-          color: AppTheme.textPrimary,
-          fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
-        ),
-      ),
+      title: Text(chat.partnerName,
+          style: TextStyle(
+            color: AppTheme.textPrimary,
+            fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
+          )),
       subtitle: chat.lastMessage != null
-          ? Text(
-              chat.lastMessage!,
+          ? Text(chat.lastMessage!,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: hasUnread ? AppTheme.textPrimary.withValues(alpha: 0.8) : AppTheme.textSecondary,
+                color: hasUnread
+                    ? AppTheme.textPrimary.withValues(alpha: 0.8)
+                    : AppTheme.textSecondary,
                 fontSize: 13,
-              ),
-            )
+              ))
           : null,
       trailing: hasUnread
           ? Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
               decoration: BoxDecoration(
-                color: AppTheme.orange,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Text(
-                '${chat.unreadCount}',
-                style: const TextStyle(color: AppTheme.bg, fontSize: 12, fontWeight: FontWeight.w600),
-              ),
+                  color: AppTheme.orange, borderRadius: BorderRadius.circular(10)),
+              child: Text('${chat.unreadCount}',
+                  style: const TextStyle(
+                      color: AppTheme.bg, fontSize: 12, fontWeight: FontWeight.w600)),
             )
           : null,
     );
@@ -181,11 +204,85 @@ class _Avatar extends StatelessWidget {
       backgroundColor: AppTheme.surfaceVariant,
       backgroundImage: url != null ? NetworkImage(url!) : null,
       child: url == null
-          ? Text(
-              name.isNotEmpty ? name[0].toUpperCase() : '?',
-              style: const TextStyle(color: AppTheme.orange, fontWeight: FontWeight.w600),
-            )
+          ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+              style: const TextStyle(color: AppTheme.orange, fontWeight: FontWeight.w600))
           : null,
+    );
+  }
+}
+
+// ── Community tab ──────────────────────────────────────────────────────────
+
+class _CommunityTab extends StatelessWidget {
+  const _CommunityTab();
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Сообщество')),
+      body: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.explore_outlined,
+                size: 56, color: AppTheme.textSecondary.withValues(alpha: 0.4)),
+            const SizedBox(height: 16),
+            const Text('В разработке',
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Settings tab ───────────────────────────────────────────────────────────
+
+class _SettingsTab extends StatelessWidget {
+  const _SettingsTab();
+
+  Future<void> _logout(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Выйти из аккаунта?',
+            style: TextStyle(color: AppTheme.textPrimary)),
+        content: const Text('Вы уверены, что хотите выйти?',
+            style: TextStyle(color: AppTheme.textSecondary)),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Отмена')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Выйти',
+                  style: TextStyle(color: Colors.redAccent))),
+        ],
+      ),
+    );
+    if (confirm == true) {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.clear();
+      if (context.mounted) Navigator.pushReplacementNamed(context, '/login');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('Настройки')),
+      body: ListView(
+        children: [
+          const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.logout, color: Colors.redAccent),
+            title: const Text('Выйти из аккаунта',
+                style: TextStyle(color: Colors.redAccent)),
+            onTap: () => _logout(context),
+          ),
+        ],
+      ),
     );
   }
 }
