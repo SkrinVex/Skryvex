@@ -45,14 +45,43 @@ static void my_application_activate(GApplication* application) {
   if (use_header_bar) {
     GtkHeaderBar* header_bar = GTK_HEADER_BAR(gtk_header_bar_new());
     gtk_widget_show(GTK_WIDGET(header_bar));
-    gtk_header_bar_set_title(header_bar, "skryvex");
+    gtk_header_bar_set_title(header_bar, "Skryvex");
     gtk_header_bar_set_show_close_button(header_bar, TRUE);
     gtk_window_set_titlebar(window, GTK_WIDGET(header_bar));
   } else {
-    gtk_window_set_title(window, "skryvex");
+    gtk_window_set_title(window, "Skryvex");
   }
 
-  gtk_window_set_default_size(window, 1280, 720);
+  // Портретный размер — как на телефоне
+  gtk_window_set_default_size(window, 420, 820);
+  gtk_window_set_resizable(window, TRUE);
+
+  // WM_CLASS для корректного отображения иконки в KDE/Wayland
+  #pragma GCC diagnostic push
+  #pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  gtk_window_set_wmclass(window, "skryvex", "Skryvex");
+  #pragma GCC diagnostic pop
+
+  // Иконка приложения — пробуем несколько путей
+  {
+    const gchar* icon_paths[] = {
+      "data/skryvex.png",
+      "skryvex.png",
+      nullptr
+    };
+    for (int i = 0; icon_paths[i] != nullptr; i++) {
+      GdkPixbuf* icon = gdk_pixbuf_new_from_file(icon_paths[i], nullptr);
+      if (icon != nullptr) {
+        gtk_window_set_icon(window, icon);
+        // Для Wayland/KDE — устанавливаем список иконок
+        GList* icon_list = g_list_append(nullptr, icon);
+        gtk_window_set_icon_list(window, icon_list);
+        g_list_free(icon_list);
+        g_object_unref(icon);
+        break;
+      }
+    }
+  }
 
   g_autoptr(FlDartProject) project = fl_dart_project_new();
   fl_dart_project_set_dart_entrypoint_arguments(

@@ -30,6 +30,17 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loading = true;
   MessageModel? _replyTo;
   int? _highlightedId;
+  double _lastBottomInset = 0;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    if (bottomInset > _lastBottomInset) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+    }
+    _lastBottomInset = bottomInset;
+  }
 
   @override
   void initState() {
@@ -80,6 +91,8 @@ class _ChatScreenState extends State<ChatScreen> {
           _msgKeys[m.id] = GlobalKey();
         });
         _scrollToBottom();
+        // Помечаем как прочитанное — мы в чате и видим сообщение
+        ApiService.get('/chats/${widget.chatId}/messages?limit=1').catchError((_) => null);
       }
     }
   }
@@ -233,13 +246,18 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
   }
 
   void _onDragUpdate(DragUpdateDetails d) {
-    // Свайп вправо для своих, влево для чужих — оба направления работают
-    final delta = widget.isMe ? -d.delta.dx : d.delta.dx;
-    if (delta < 0) return; // только в одну сторону
-    setState(() {
-      _dragX = (_dragX + d.delta.dx).clamp(widget.isMe ? -60.0 : 0.0, widget.isMe ? 0.0 : 60.0);
-    });
-    if (_dragX.abs() >= 50 && !_triggered) {
+    final dx = d.delta.dx;
+    // Свайп вправо для чужих сообщений, влево для своих
+    final isCorrectDirection = widget.isMe ? dx < 0 : dx > 0;
+    if (!isCorrectDirection && _dragX == 0) return;
+
+    final newX = (_dragX + dx).clamp(
+      widget.isMe ? -70.0 : 0.0,
+      widget.isMe ? 0.0 : 70.0,
+    );
+    setState(() => _dragX = newX);
+
+    if (_dragX.abs() >= 65 && !_triggered) {
       _triggered = true;
       HapticFeedback.lightImpact();
       widget.onReply();
@@ -272,6 +290,7 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
         GestureDetector(
           onHorizontalDragUpdate: _onDragUpdate,
           onHorizontalDragEnd: _onDragEnd,
+          behavior: HitTestBehavior.translucent,
           child: Transform.translate(
             offset: Offset(_dragX, 0),
             child: Stack(
