@@ -1,12 +1,19 @@
 plugins {
     id("com.android.application")
     id("kotlin-android")
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+import java.util.Properties
+
+val keyProps = Properties()
+val keyPropsFile = rootProject.file("key.properties")
+if (keyPropsFile.exists()) {
+    keyPropsFile.inputStream().use { keyProps.load(it) }
+}
+
 android {
-    namespace = "com.example.skryvex"
+    namespace = "su.skrinvex.skryvex"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -16,14 +23,21 @@ android {
     }
 
     kotlinOptions {
+        @Suppress("DEPRECATION")
         jvmTarget = JavaVersion.VERSION_17.toString()
     }
 
+    signingConfigs {
+        create("release") {
+            keyAlias = keyProps["keyAlias"] as String? ?: "sgstudio"
+            keyPassword = keyProps["keyPassword"] as String? ?: ""
+            storeFile = file(keyProps["storeFile"] as String? ?: "/home/komari/SG.keystore")
+            storePassword = keyProps["storePassword"] as String? ?: ""
+        }
+    }
+
     defaultConfig {
-        // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.skryvex"
-        // You can update the following values to match your application needs.
-        // For more information, see: https://flutter.dev/to/review-gradle-config.
+        applicationId = "su.skrinvex.skryvex"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -32,8 +46,9 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
+            signingConfig = signingConfigs.getByName("release")
+        }
+        debug {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
