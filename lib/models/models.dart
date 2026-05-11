@@ -52,11 +52,16 @@ class MessageModel {
   final int senderId;
   final String senderName;
   final String? senderAvatar;
-  final String text;
+  final String? text;
   final DateTime createdAt;
   final int? replyToId;
   final String? replyText;
   final String? replySenderName;
+  final String? replyMediaType;
+  final bool replyMediaDeleted;
+  final String? mediaType;   // 'image' | 'video' | null
+  final String? mediaUrl;    // presigned URL
+  final bool mediaDeleted;
 
   const MessageModel({
     required this.id,
@@ -64,11 +69,16 @@ class MessageModel {
     required this.senderId,
     required this.senderName,
     this.senderAvatar,
-    required this.text,
+    this.text,
     required this.createdAt,
     this.replyToId,
     this.replyText,
     this.replySenderName,
+    this.replyMediaType,
+    this.replyMediaDeleted = false,
+    this.mediaType,
+    this.mediaUrl,
+    this.mediaDeleted = false,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> j) => MessageModel(
@@ -77,10 +87,15 @@ class MessageModel {
         senderId: j['sender_id'] as int,
         senderName: j['sender_name'] as String,
         senderAvatar: j['sender_avatar'] as String?,
-        text: j['text'] as String,
+        text: j['text'] as String?,
         createdAt: DateTime.parse(j['created_at'] as String),
         replyToId: j['reply_to_id'] as int?,
         replyText: j['reply_text'] as String?,
         replySenderName: j['reply_sender_name'] as String?,
+        replyMediaType: j['reply_media_type'] as String?,
+        replyMediaDeleted: j['reply_media_deleted'] as bool? ?? false,
+        mediaType: j['media_type'] as String?,
+        mediaUrl: j['media_url'] as String?,
+        mediaDeleted: j['media_deleted'] as bool? ?? false,
       );
 }

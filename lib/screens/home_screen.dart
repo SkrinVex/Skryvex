@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/cache_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_screen.dart';
 import 'search_screen.dart';
@@ -77,13 +78,37 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
     _loadChats();
   }
 
-  Future<void> _loadChats() async {
+  Future<void> _loadChats({bool forceRefresh = false}) async {
+    // Показываем кэш мгновенно
+    if (!forceRefresh) {
+      final cached = await CacheService.loadChats();
+      if (cached != null && mounted) {
+        setState(() {
+          _chats = cached.map((e) => ChatModel.fromJson(e as Map<String, dynamic>)).toList();
+          _loading = false;
+        });
+        // Обновляем в фоне без индикатора
+        _refreshChatsBackground();
+        return;
+      }
+    }
     setState(() => _loading = true);
+    await _refreshChatsBackground();
+  }
+
+  Future<void> _refreshChatsBackground() async {
     try {
       final data = await ApiService.get('/chats') as List<dynamic>;
-      setState(() => _chats = data.map((e) => ChatModel.fromJson(e as Map<String, dynamic>)).toList());
-    } catch (_) {}
-    finally { if (mounted) setState(() => _loading = false); }
+      await CacheService.saveChats(data);
+      if (mounted) {
+        setState(() {
+          _chats = data.map((e) => ChatModel.fromJson(e as Map<String, dynamic>)).toList();
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -109,7 +134,7 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
               : RefreshIndicator(
                   color: AppTheme.orange,
                   backgroundColor: AppTheme.surface,
-                  onRefresh: _loadChats,
+                  onRefresh: () => _loadChats(forceRefresh: true),
                   child: ListView.separated(
                     itemCount: _chats.length,
                     separatorBuilder: (context, index) =>

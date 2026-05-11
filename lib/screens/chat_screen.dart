@@ -5,9 +5,15 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:cached_network_image/cached_network_image.dart';
+import '../services/video_thumb.dart';
 import '../theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/cache_service.dart';
+import 'media_viewer.dart';
 
 class ChatScreen extends StatefulWidget {
   final int chatId;
@@ -30,6 +36,10 @@ class _ChatScreenState extends State<ChatScreen> {
   bool _loading = true;
   MessageModel? _replyTo;
   int? _highlightedId;
+  bool _uploading = false;
+  double _uploadProgress = 0;
+  http.Client? _uploadClient;
+  Uint8List? _uploadPreviewBytes; // локальный превью до получения WS
   double _lastBottomInset = 0;
 
   @override
@@ -42,9 +52,15 @@ class _ChatScreenState extends State<ChatScreen> {
     _lastBottomInset = bottomInset;
   }
 
+  bool _hasText = false;
+
   @override
   void initState() {
     super.initState();
+    _msgCtrl.addListener(() {
+      final has = _msgCtrl.text.trim().isNotEmpty;
+      if (has != _hasText) setState(() => _hasText = has);
+    });
     initializeDateFormatting('ru', null).then((_) => _init());
   }
 
@@ -64,9 +80,10 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _loadMessages() async {
-    try {
-      final data = await ApiService.get('/chats/${widget.chatId}/messages') as List<dynamic>;
-      final msgs = data.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)).toList();
+    // Показываем кэш мгновенно
+    final cached = await CacheService.loadMessages(widget.chatId);
+    if (cached != null && mounted) {
+      final msgs = cached.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)).toList();
       setState(() {
         _messages.clear();
         _messages.addAll(msgs);
@@ -76,8 +93,25 @@ class _ChatScreenState extends State<ChatScreen> {
         _loading = false;
       });
       _scrollToBottom();
+    }
+    // Всегда грузим свежие с сервера
+    try {
+      final data = await ApiService.get('/chats/${widget.chatId}/messages') as List<dynamic>;
+      await CacheService.saveMessages(widget.chatId, data);
+      final msgs = data.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)).toList();
+      if (mounted) {
+        setState(() {
+          _messages.clear();
+          _messages.addAll(msgs);
+          for (final m in msgs) {
+            _msgKeys[m.id] = GlobalKey();
+          }
+          _loading = false;
+        });
+        _scrollToBottom();
+      }
     } catch (_) {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -91,21 +125,30 @@ class _ChatScreenState extends State<ChatScreen> {
           _msgKeys[m.id] = GlobalKey();
         });
         _scrollToBottom();
-        // Помечаем как прочитанное — мы в чате и видим сообщение
+        CacheService.invalidateMessages(widget.chatId);
+        CacheService.invalidateChats();
         ApiService.get('/chats/${widget.chatId}/messages?limit=1').catchError((_) => null);
       }
+    }
+    if (msg['type'] == 'message_deleted') {
+      final id = msg['id'] as int;
+      setState(() => _messages.removeWhere((m) => m.id == id));
+      CacheService.invalidateMessages(widget.chatId);
     }
   }
 
   void _scrollToBottom() {
+    // Двойной postFrameCallback — ждём пока все виджеты с фиксированной высотой отрендерятся
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollCtrl.hasClients) {
-        _scrollCtrl.animateTo(
-          _scrollCtrl.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 250),
-          curve: Curves.easeOut,
-        );
-      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scrollCtrl.hasClients) {
+          _scrollCtrl.animateTo(
+            _scrollCtrl.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeOut,
+          );
+        }
+      });
     });
   }
 
@@ -133,6 +176,197 @@ class _ChatScreenState extends State<ChatScreen> {
     }));
     _msgCtrl.clear();
     setState(() => _replyTo = null);
+  }
+
+  Future<void> _pickAndSendMedia(ImageSource source, {bool video = false}) async {
+    final picker = ImagePicker();
+    XFile? file;
+    if (video) {
+      file = await picker.pickVideo(source: source, maxDuration: const Duration(minutes: 5));
+    } else {
+      file = await picker.pickImage(source: source, imageQuality: 85);
+    }
+    if (file == null) return;
+
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    if (token == null) return;
+
+    final bytes = await file.readAsBytes();
+    final replyToId = _replyTo?.id;
+
+    setState(() {
+      _replyTo = null;
+      _uploading = true;
+      _uploadProgress = 0;
+      if (!video) _uploadPreviewBytes = bytes;
+    });
+
+    // Для видео — генерируем превью из локального файла
+    if (video) {
+      _generateLocalVideoThumb(file.path);
+    }
+    _scrollToBottom();
+
+    _uploadClient = http.Client();
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('${ApiService.baseUrl}/chats/${widget.chatId}/media'),
+      );
+      request.headers['Authorization'] = 'Bearer $token';
+      request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: file.name));
+      if (replyToId != null) request.fields['reply_to_id'] = '$replyToId';
+
+      final total = bytes.length.toDouble();
+
+      // Эмулируем прогресс по отправленным байтам через stream
+      final streamedResponse = await _uploadClient!.send(request);
+
+      // Прогресс: считаем по contentLength запроса (bytes.length)
+      // http пакет не даёт upload progress напрямую, поэтому анимируем
+      // от 0 до 95% за время отправки, потом 100% при получении ответа
+      final duration = Duration(milliseconds: (total / 50000 * 1000).clamp(500, 8000).toInt());
+      final steps = 20;
+      for (int i = 1; i <= steps; i++) {
+        await Future.delayed(Duration(milliseconds: duration.inMilliseconds ~/ steps));
+        if (!mounted || !_uploading) break;
+        setState(() => _uploadProgress = (i / steps * 0.95).clamp(0.0, 0.95));
+      }
+
+      await streamedResponse.stream.drain();
+
+      if (mounted) setState(() => _uploadProgress = 1.0);
+      await Future.delayed(const Duration(milliseconds: 300));
+
+      if (streamedResponse.statusCode != 201 && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ошибка отправки файла')),
+        );
+      }
+    } catch (e) {
+      if (mounted && _uploading) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Отправка отменена')),
+        );
+      }
+    } finally {
+      _uploadClient = null;
+      if (mounted) {
+        setState(() {
+          _uploading = false;
+          _uploadProgress = 0;
+          _uploadPreviewBytes = null;
+        });
+      }
+    }
+  }
+
+  Future<void> _deleteMessage(MessageModel msg) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Удалить сообщение?', style: TextStyle(color: AppTheme.textPrimary)),
+        content: const Text('Сообщение будет удалено для всех участников.',
+            style: TextStyle(color: AppTheme.textSecondary)),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
+          ),
+        ],
+      ),
+    );
+    if (confirm != true) return;
+    try {
+      await ApiService.delete('/chats/${widget.chatId}/messages/${msg.id}');
+      setState(() => _messages.removeWhere((m) => m.id == msg.id));
+      CacheService.invalidateMessages(widget.chatId);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Ошибка удаления')),
+        );
+      }
+    }
+  }
+
+  void _showMessageMenu(BuildContext context, MessageModel msg) {
+    final isMe = msg.senderId == _myId;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.reply, color: AppTheme.orange),
+              title: const Text('Ответить', style: TextStyle(color: AppTheme.textPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                setState(() => _replyTo = msg);
+              },
+            ),
+            if (isMe) ListTile(
+              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+              title: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
+              onTap: () {
+                Navigator.pop(context);
+                _deleteMessage(msg);
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _cancelUpload() {
+    _uploadClient?.close();
+    _uploadClient = null;
+  }
+
+  Future<void> _generateLocalVideoThumb(String path) async {
+    final thumb = await generateLocalVideoThumbnail(path);
+    if (mounted && thumb != null) setState(() => _uploadPreviewBytes = thumb);
+  }
+
+  void _showMediaPicker() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.photo, color: AppTheme.orange),
+              title: const Text('Фото из галереи', style: TextStyle(color: AppTheme.textPrimary)),
+              onTap: () { Navigator.pop(context); _pickAndSendMedia(ImageSource.gallery); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.camera_alt, color: AppTheme.orange),
+              title: const Text('Сделать фото', style: TextStyle(color: AppTheme.textPrimary)),
+              onTap: () { Navigator.pop(context); _pickAndSendMedia(ImageSource.camera); },
+            ),
+            ListTile(
+              leading: const Icon(Icons.videocam, color: AppTheme.orange),
+              title: const Text('Видео из галереи', style: TextStyle(color: AppTheme.textPrimary)),
+              onTap: () { Navigator.pop(context); _pickAndSendMedia(ImageSource.gallery, video: true); },
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -165,8 +399,18 @@ class _ChatScreenState extends State<ChatScreen> {
                     : ListView.builder(
                         controller: _scrollCtrl,
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        itemCount: _messages.length,
+                        itemCount: _messages.length + (_uploading ? 1 : 0),
                         itemBuilder: (_, i) {
+                          // Последний элемент — превью загружаемого файла
+                          if (_uploading && i == _messages.length) {
+                            return GestureDetector(
+                              onLongPress: _cancelUpload,
+                              child: _UploadingBubble(
+                                previewBytes: _uploadPreviewBytes,
+                                progress: _uploadProgress,
+                              ),
+                            );
+                          }
                           final msg = _messages[i];
                           final showDate = i == 0 ||
                               !_sameDay(_messages[i - 1].createdAt, msg.createdAt);
@@ -177,6 +421,7 @@ class _ChatScreenState extends State<ChatScreen> {
                             showDate: showDate,
                             isHighlighted: _highlightedId == msg.id,
                             onReply: () => setState(() => _replyTo = msg),
+                            onLongPress: () => _showMessageMenu(context, msg),
                             onTapReply: msg.replyToId != null
                                 ? () => _scrollToMessage(msg.replyToId!)
                                 : null,
@@ -190,7 +435,12 @@ class _ChatScreenState extends State<ChatScreen> {
             onCancel: () => setState(() => _replyTo = null),
             onTap: () => _scrollToMessage(_replyTo!.id),
           ),
-          _InputBar(controller: _msgCtrl, onSend: _send),
+          _InputBar(
+            controller: _msgCtrl,
+            onSend: _send,
+            onAttach: _showMediaPicker,
+            hasText: _hasText,
+          ),
         ],
       ),
     );
@@ -208,6 +458,7 @@ class _SwipeableMessage extends StatefulWidget {
   final bool showDate;
   final bool isHighlighted;
   final VoidCallback onReply;
+  final VoidCallback onLongPress;
   final VoidCallback? onTapReply;
 
   const _SwipeableMessage({
@@ -217,6 +468,7 @@ class _SwipeableMessage extends StatefulWidget {
     required this.showDate,
     required this.isHighlighted,
     required this.onReply,
+    required this.onLongPress,
     this.onTapReply,
   });
 
@@ -290,6 +542,7 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
         GestureDetector(
           onHorizontalDragUpdate: _onDragUpdate,
           onHorizontalDragEnd: _onDragEnd,
+          onLongPress: widget.onLongPress,
           behavior: HitTestBehavior.translucent,
           child: Transform.translate(
             offset: Offset(_dragX, 0),
@@ -366,11 +619,10 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
                                   ),
                                   const SizedBox(height: 2),
                                   Text(
-                                    widget.message.replyText ?? '',
+                                    _replyBubbleText(widget.message),
                                     maxLines: 1,
                                     overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      color: widget.isMe
+                                    style: TextStyle(                                      color: widget.isMe
                                           ? AppTheme.bg.withValues(alpha: 0.7)
                                           : AppTheme.textSecondary,
                                       fontSize: 12,
@@ -385,13 +637,21 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Text(
-                                widget.message.text,
-                                style: TextStyle(
-                                  color: widget.isMe ? AppTheme.bg : AppTheme.textPrimary,
-                                  fontSize: 15,
+                              // Медиа
+                              if (widget.message.mediaType != null)
+                                _MediaContent(
+                                  message: widget.message,
+                                  isMe: widget.isMe,
                                 ),
-                              ),
+                              // Текст
+                              if (widget.message.text != null && widget.message.text!.isNotEmpty)
+                                Text(
+                                  widget.message.text!,
+                                  style: TextStyle(
+                                    color: widget.isMe ? AppTheme.bg : AppTheme.textPrimary,
+                                    fontSize: 15,
+                                  ),
+                                ),
                               const SizedBox(height: 3),
                               Text(
                                 time,
@@ -431,6 +691,281 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
   }
 }
 
+// ── Uploading bubble (локальный превью) ────────────────────────────────────
+
+class _UploadingBubble extends StatelessWidget {
+  final Uint8List? previewBytes;
+  final double progress;
+  const _UploadingBubble({this.previewBytes, required this.progress});
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: Container(
+        constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
+        margin: const EdgeInsets.only(bottom: 4),
+        decoration: BoxDecoration(
+          color: AppTheme.orangeDim,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.circular(16),
+            bottomLeft: Radius.circular(16),
+            bottomRight: Radius.circular(4),
+          ),
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(16),
+            topRight: Radius.circular(16),
+            bottomLeft: Radius.circular(16),
+            bottomRight: Radius.circular(4),
+          ),
+          child: Stack(
+            children: [
+              // Превью файла
+              if (previewBytes != null)
+                Image.memory(
+                  previewBytes!,
+                  width: 220,
+                  height: 160,
+                  fit: BoxFit.cover,
+                )
+              else
+                Container(
+                  width: 220,
+                  height: 100,
+                  color: Colors.black38,
+                  child: const Center(
+                    child: Icon(Icons.videocam, color: AppTheme.textSecondary, size: 36),
+                  ),
+                ),
+              // Оверлей с прогрессом
+              Positioned.fill(
+                child: Container(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      SizedBox(
+                        width: 52, height: 52,
+                        child: CircularProgressIndicator(
+                          value: progress > 0 ? progress : null,
+                          color: Colors.white,
+                          strokeWidth: 3,
+                        ),
+                      ),
+                      if (progress > 0) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          '${(progress * 100).toInt()}%',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Video thumbnail widget ─────────────────────────────────────────────────
+
+class _VideoThumbnail extends StatefulWidget {
+  final String url;
+  final bool isMe;
+  const _VideoThumbnail({required this.url, required this.isMe});
+
+  @override
+  State<_VideoThumbnail> createState() => _VideoThumbnailState();
+}
+
+class _VideoThumbnailState extends State<_VideoThumbnail> {
+  Uint8List? _thumb;
+  bool _deleted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    generateVideoThumbnail(widget.url).then((result) {
+      if (mounted) {
+        setState(() {
+          _thumb = result.bytes;
+          _deleted = result.deleted;
+        });
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_deleted) {
+      return GestureDetector(
+        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Медиафайл удалён — срок хранения истёк (7 дней)')),
+        ),
+        child: _deletedMedia(isMe: widget.isMe),
+      );
+    }
+
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => VideoPlayerScreen(
+          url: widget.url,
+          onError: () {
+            if (mounted) setState(() => _deleted = true);
+          },
+        )),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 220,
+          height: 140,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (_thumb != null)
+                Image.memory(_thumb!, fit: BoxFit.cover)
+              else
+                Container(
+                  color: Colors.black54,
+                  child: const Center(
+                    child: SizedBox(
+                      width: 24, height: 24,
+                      child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2),
+                    ),
+                  ),
+                ),
+              Center(
+                child: Container(
+                  width: 48, height: 48,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.55),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+Widget _deletedMedia({required bool isMe}) {
+  return Container(
+    width: 220,
+    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+    decoration: BoxDecoration(
+      color: Colors.white.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(8),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(Icons.delete_outline, size: 18,
+            color: isMe ? AppTheme.bg.withValues(alpha: 0.5) : AppTheme.textSecondary),
+        const SizedBox(width: 6),
+        Text('Медиа удалено',
+            style: TextStyle(
+              color: isMe ? AppTheme.bg.withValues(alpha: 0.5) : AppTheme.textSecondary,
+              fontSize: 13,
+              fontStyle: FontStyle.italic,
+            )),
+      ],
+    ),
+  );
+}
+
+// ── Media content ──────────────────────────────────────────────────────────
+
+class _MediaContent extends StatelessWidget {
+  final MessageModel message;
+  final bool isMe;
+  const _MediaContent({required this.message, required this.isMe});
+
+  @override
+  Widget build(BuildContext context) {
+    if (message.mediaDeleted) {
+      return GestureDetector(
+        onTap: () => ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Медиафайл удалён — срок хранения истёк (7 дней)'),
+            duration: Duration(seconds: 3),
+          ),
+        ),
+        child: _deletedMedia(isMe: isMe),
+      );
+    }
+
+    if (message.mediaType == 'image' && message.mediaUrl != null) {
+      return GestureDetector(
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => PhotoViewScreen(
+            url: message.mediaUrl!,
+            cacheKey: 'msg_img_${message.id}',
+          )),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: CachedNetworkImage(
+            imageUrl: message.mediaUrl!,
+            cacheKey: 'msg_img_${message.id}',
+            width: 220,
+            fit: BoxFit.cover,
+            placeholder: (context, url) => Container(
+              width: 220, height: 160,
+              color: Colors.black26,
+              child: const Center(
+                child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2),
+              ),
+            ),
+            errorWidget: (context, url, error) => Container(
+              width: 220, height: 80,
+              color: Colors.black26,
+              child: const Center(child: Icon(Icons.broken_image, color: AppTheme.textSecondary)),
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (message.mediaType == 'video' && message.mediaUrl != null) {
+      return _VideoThumbnail(url: message.mediaUrl!, isMe: isMe);
+    }
+
+    return const SizedBox.shrink();
+  }
+}
+
+String _replyPreviewText(MessageModel m) {
+  if (m.mediaDeleted) return '🗑 Медиа удалено';
+  if (m.mediaType == 'image') return '📷 Фото';
+  if (m.mediaType == 'video') return '🎥 Видео';
+  return m.text ?? '';
+}
+
+String _replyBubbleText(MessageModel m) {
+  if (m.replyMediaDeleted) return '🗑 Медиа удалено';
+  if (m.replyMediaType == 'image') return '📷 Фото';
+  if (m.replyMediaType == 'video') return '🎥 Видео';
+  return m.replyText ?? '';
+}
+
 // ── Reply preview bar ──────────────────────────────────────────────────────
 
 class _ReplyPreview extends StatelessWidget {
@@ -468,7 +1003,7 @@ class _ReplyPreview extends StatelessWidget {
                         color: AppTheme.orange, fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                   Text(
-                    message.text,
+                    _replyPreviewText(message),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13),
@@ -492,18 +1027,31 @@ class _ReplyPreview extends StatelessWidget {
 class _InputBar extends StatelessWidget {
   final TextEditingController controller;
   final VoidCallback onSend;
+  final VoidCallback onAttach;
+  final bool hasText;
 
-  const _InputBar({required this.controller, required this.onSend});
+  const _InputBar({
+    required this.controller,
+    required this.onSend,
+    required this.onAttach,
+    required this.hasText,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       color: AppTheme.surface,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: SafeArea(
         top: false,
         child: Row(
           children: [
+            IconButton(
+              icon: const Icon(Icons.attach_file, color: AppTheme.textSecondary),
+              onPressed: onAttach,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
             Expanded(
               child: TextField(
                 controller: controller,
@@ -511,18 +1059,32 @@ class _InputBar extends StatelessWidget {
                 maxLines: 4,
                 minLines: 1,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(hintText: 'Сообщение...'),
+                decoration: const InputDecoration(
+                  hintText: 'Сообщение...',
+                  // Убираем обводку фокуса
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.all(Radius.circular(12)),
+                    borderSide: BorderSide.none,
+                  ),
+                ),
               ),
             ),
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: onSend,
-              child: Container(
+              onTap: hasText ? onSend : null,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 width: 44,
                 height: 44,
-                decoration: const BoxDecoration(
-                    color: AppTheme.orange, shape: BoxShape.circle),
-                child: const Icon(Icons.send_rounded, color: AppTheme.bg, size: 20),
+                decoration: BoxDecoration(
+                  color: hasText ? AppTheme.orange : AppTheme.surfaceVariant,
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.send_rounded,
+                  color: hasText ? AppTheme.bg : AppTheme.textSecondary,
+                  size: 20,
+                ),
               ),
             ),
           ],

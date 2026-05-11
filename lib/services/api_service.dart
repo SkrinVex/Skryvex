@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
   static const _base = 'https://api.skrinvex.su/api';
+  static const baseUrl = 'https://api.skrinvex.su/api';
   static const wsBase = 'wss://api.skrinvex.su/ws';
 
   static Future<Map<String, String>> _headers({bool auth = true}) async {
@@ -35,5 +36,13 @@ class ApiService {
       headers: await _headers(),
     );
     return jsonDecode(res.body);
+  }
+
+  static Future<Map<String, dynamic>> delete(String path) async {
+    final res = await http.delete(
+      Uri.parse('$_base$path'),
+      headers: await _headers(),
+    );
+    return jsonDecode(res.body) as Map<String, dynamic>;
   }
 }
