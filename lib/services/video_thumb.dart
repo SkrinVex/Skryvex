@@ -1,38 +1,12 @@
 import 'dart:typed_data';
-import 'package:video_thumbnail/video_thumbnail.dart';
 
-final _cache = <String, ({Uint8List? bytes, bool deleted})>{};
+// Conditional import: web uses dart:html, everything else uses dart:io + platform check
+import 'video_thumb_io.dart'
+    if (dart.library.html) 'video_thumb_web.dart'
+    as _platform;
 
-Future<({Uint8List? bytes, bool deleted})> generateVideoThumbnail(String videoUrl) async {
-  if (_cache.containsKey(videoUrl)) return _cache[videoUrl]!;
-  try {
-    final bytes = await VideoThumbnail.thumbnailData(
-      video: videoUrl,
-      imageFormat: ImageFormat.JPEG,
-      maxWidth: 320,
-      quality: 75,
-      timeMs: 1000,
-    );
-    final result = (bytes: bytes, deleted: bytes == null);
-    _cache[videoUrl] = result;
-    return result;
-  } catch (_) {
-    final result = (bytes: null, deleted: false);
-    _cache[videoUrl] = result;
-    return result;
-  }
-}
+Future<({Uint8List? bytes, bool deleted})> generateVideoThumbnail(String videoUrl) =>
+    _platform.generateVideoThumbnail(videoUrl);
 
-Future<Uint8List?> generateLocalVideoThumbnail(String localPath) async {
-  try {
-    return await VideoThumbnail.thumbnailData(
-      video: localPath,
-      imageFormat: ImageFormat.JPEG,
-      maxWidth: 320,
-      quality: 75,
-      timeMs: 1000,
-    );
-  } catch (_) {
-    return null;
-  }
-}
+Future<Uint8List?> generateLocalVideoThumbnail(String localPath) =>
+    _platform.generateLocalVideoThumbnail(localPath);
