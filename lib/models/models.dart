@@ -2,16 +2,22 @@ class UserModel {
   final int id;
   final String email;
   final String name;
+  final String? username;
   final String? avatarUrl;
 
-  const UserModel({required this.id, required this.email, required this.name, this.avatarUrl});
+  const UserModel({required this.id, required this.email, required this.name, this.username, this.avatarUrl});
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
         id: j['id'] as int,
         email: j['email'] as String,
         name: j['name'] as String,
+        username: j['username'] as String?,
         avatarUrl: j['avatar_url'] as String?,
       );
+
+  Map<String, dynamic> toJson() => {
+    'id': id, 'email': email, 'name': name, 'username': username, 'avatar_url': avatarUrl,
+  };
 }
 
 class ChatModel {

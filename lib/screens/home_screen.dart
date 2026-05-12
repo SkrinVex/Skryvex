@@ -8,6 +8,7 @@ import '../services/cache_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_screen.dart';
 import 'search_screen.dart';
+import 'profile_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -333,6 +334,13 @@ class _SettingsTab extends StatelessWidget {
       body: ListView(
         children: [
           const SizedBox(height: 8),
+          ListTile(
+            leading: const Icon(Icons.person_outline, color: AppTheme.orange),
+            title: const Text('Аккаунт', style: TextStyle(color: AppTheme.textPrimary)),
+            trailing: const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
+          ),
+          const Divider(height: 1, indent: 16, color: AppTheme.divider),
           ListTile(
             leading: const Icon(Icons.logout, color: Colors.redAccent),
             title: const Text('Выйти из аккаунта',

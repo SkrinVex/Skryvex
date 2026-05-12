@@ -59,6 +59,13 @@ class AppTheme {
       style: TextButton.styleFrom(foregroundColor: orange),
     ),
     dividerColor: divider,
+    snackBarTheme: SnackBarThemeData(
+      behavior: SnackBarBehavior.floating,
+      backgroundColor: surfaceVariant,
+      contentTextStyle: const TextStyle(color: textPrimary, fontSize: 14),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      elevation: 4,
+    ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: surface,
       indicatorColor: orange.withValues(alpha: 0.15),

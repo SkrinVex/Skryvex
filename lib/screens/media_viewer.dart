@@ -95,15 +95,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
             normal: MaterialVideoControlsThemeData(
               seekBarThumbColor: AppTheme.orange,
               seekBarPositionColor: AppTheme.orange,
-              bottomButtonBarMargin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+              seekBarMargin: EdgeInsets.fromLTRB(16, 0, 16, MediaQuery.of(context).padding.bottom + 48),
+              bottomButtonBarMargin: EdgeInsets.fromLTRB(16, 0, 16, MediaQuery.of(context).padding.bottom + 8),
             ),
             fullscreen: MaterialVideoControlsThemeData(
               seekBarThumbColor: AppTheme.orange,
               seekBarPositionColor: AppTheme.orange,
-              bottomButtonBarMargin: EdgeInsets.fromLTRB(
-                16, 0, 16,
-                MediaQuery.of(context).padding.bottom + 24,
-              ),
+              seekBarMargin: EdgeInsets.fromLTRB(16, 0, 16, MediaQuery.of(context).padding.bottom + 56),
+              bottomButtonBarMargin: EdgeInsets.fromLTRB(16, 0, 16, MediaQuery.of(context).padding.bottom + 16),
             ),
             child: Video(
               controller: _controller,
