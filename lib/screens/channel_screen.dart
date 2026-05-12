@@ -392,7 +392,7 @@ class _PostCard extends StatelessWidget {
     final accent = Theme.of(context).colorScheme.primary;
     final time = DateFormat('d MMM, HH:mm', 'ru').format(post.createdAt.toLocal());
     return GestureDetector(
-      onLongPress: isOwner ? () => _menu(context) : null,
+      behavior: HitTestBehavior.opaque,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 200),
         margin: const EdgeInsets.only(bottom: 12),
@@ -460,31 +460,6 @@ class _PostCard extends StatelessWidget {
     if (p.replyMediaType == 'image') return '📷 Фото';
     if (p.replyMediaType == 'video') return '🎥 Видео';
     return p.replyText ?? '';
-  }
-
-  void _menu(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        if (post.text != null) ListTile(
-          leading: Icon(Icons.copy, color: AppTheme.orange),
-          title: const Text('Копировать', style: TextStyle(color: AppTheme.textPrimary)),
-          onTap: () { Navigator.pop(context); Clipboard.setData(ClipboardData(text: post.text!)); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Скопировано'))); },
-        ),
-        if (post.mediaUrl != null && !post.mediaDeleted) ListTile(
-          leading: Icon(Icons.download, color: AppTheme.orange),
-          title: const Text('Сохранить медиа', style: TextStyle(color: AppTheme.textPrimary)),
-          onTap: () { Navigator.pop(context); showDownloadSheet(context, url: post.mediaUrl!, filename: '${post.mediaType}_${post.id}.${post.mediaType == 'video' ? 'mp4' : 'jpg'}'); },
-        ),
-        ListTile(
-          leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-          title: const Text('Удалить пост', style: TextStyle(color: Colors.redAccent)),
-          onTap: () { Navigator.pop(context); onDelete(); },
-        ),
-      ])),
-    );
   }
 }
 
@@ -693,12 +668,39 @@ class _SwipeablePostState extends State<_SwipeablePost> with SingleTickerProvide
     _snapCtrl.forward(from: 0);
   }
 
+  void _showMenu(BuildContext context) {
+    final post = widget.post;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppTheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
+      builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        if (post.text != null && post.text!.isNotEmpty) ListTile(
+          leading: Icon(Icons.copy, color: AppTheme.orange),
+          title: const Text('Копировать', style: TextStyle(color: AppTheme.textPrimary)),
+          onTap: () { Navigator.pop(context); Clipboard.setData(ClipboardData(text: post.text!)); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Скопировано'))); },
+        ),
+        if (post.mediaUrl != null && !post.mediaDeleted) ListTile(
+          leading: Icon(Icons.download, color: AppTheme.orange),
+          title: const Text('Сохранить медиа', style: TextStyle(color: AppTheme.textPrimary)),
+          onTap: () { Navigator.pop(context); showDownloadSheet(context, url: post.mediaUrl!, filename: '${post.mediaType}_${post.id}.${post.mediaType == 'video' ? 'mp4' : 'jpg'}'); },
+        ),
+        if (widget.isOwner) ListTile(
+          leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+          title: const Text('Удалить пост', style: TextStyle(color: Colors.redAccent)),
+          onTap: () { Navigator.pop(context); widget.onDelete(); },
+        ),
+      ])),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
       onHorizontalDragUpdate: _onDragUpdate,
       onHorizontalDragEnd: _onDragEnd,
-      behavior: HitTestBehavior.translucent,
+      onLongPress: () => _showMenu(context),
+      behavior: HitTestBehavior.opaque,
       child: Transform.translate(
         offset: Offset(_dragX, 0),
         child: Stack(children: [
