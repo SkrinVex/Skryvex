@@ -37,7 +37,6 @@ class _ChatScreenState extends State<ChatScreen> {
   WebSocketChannel? _ws;
   int? _myId;
   bool _loading = true;
-  bool _listVisible = false;
   bool _loadingMore = false;
   bool _hasMore = true;
   bool _showScrollDown = false;
@@ -46,17 +45,11 @@ class _ChatScreenState extends State<ChatScreen> {
   int? _highlightedId;
   bool _uploading = false;
   double _uploadProgress = 0;
-  Uint8List? _uploadPreviewBytes; // локальный превью до получения WS
-  double _lastBottomInset = 0;
+  Uint8List? _uploadPreviewBytes;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
-    if (bottomInset > _lastBottomInset) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
-    }
-    _lastBottomInset = bottomInset;
   }
 
   bool _hasText = false;
@@ -111,13 +104,13 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _onScroll() {
-    // Догрузка старых сообщений при прокрутке вверх
-    if (_scrollCtrl.position.pixels < 200 && !_loadingMore && _hasMore) {
+    // reverse:true — верх списка = большой offset, низ = 0
+    // Догрузка при прокрутке к верху
+    if (_scrollCtrl.position.pixels > _scrollCtrl.position.maxScrollExtent - 200 && !_loadingMore && _hasMore) {
       _loadMore();
     }
-    // Кнопка прокрутки вниз
-    final distFromBottom = _scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels;
-    final show = distFromBottom > 400;
+    // Кнопка прокрутки вниз — показываем когда далеко от низа (offset > 400)
+    final show = _scrollCtrl.position.pixels > 400;
     if (show != _showScrollDown) setState(() => _showScrollDown = show);
   }
 
@@ -135,10 +128,7 @@ class _ChatScreenState extends State<ChatScreen> {
         _messages.addAll(msgs);
         _loading = false;
         _hasMore = msgs.length == _pageSize;
-        _listVisible = false;
       });
-      _scrollToBottom(jump: true);
-      if (mounted) setState(() => _listVisible = true);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
@@ -155,15 +145,12 @@ class _ChatScreenState extends State<ChatScreen> {
       final msgs = data.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)).toList();
       if (!mounted) return;
       for (final m in msgs) { _msgKeys[m.id] = GlobalKey(); }
-      final prevExtent = _scrollCtrl.position.maxScrollExtent;
+      // reverse:true — вставка в начало списка = добавление вверху экрана
+      // позиция скролла не прыгает автоматически
       setState(() {
         _messages.insertAll(0, msgs);
         _hasMore = msgs.length == _pageSize;
         _loadingMore = false;
-      });
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scrollCtrl.hasClients) return;
-        _scrollCtrl.jumpTo(_scrollCtrl.offset + (_scrollCtrl.position.maxScrollExtent - prevExtent));
       });
     } catch (_) {
       if (mounted) setState(() => _loadingMore = false);
@@ -195,48 +182,32 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _scrollToBottom({bool jump = false}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!_scrollCtrl.hasClients) return;
-        if (jump) {
-          _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
-        } else {
-          _scrollCtrl.animateTo(
-            _scrollCtrl.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 250),
-            curve: Curves.easeOut,
-          );
-        }
-      });
-    });
+    if (!_scrollCtrl.hasClients) return;
+    if (jump) {
+      _scrollCtrl.jumpTo(0);
+    } else {
+      _scrollCtrl.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
   }
 
   Future<void> _scrollToMessage(int messageId) async {
-    // Если ключ не в дереве — элемент вне viewport, прыгаем к краю и ждём рендера
+    // reverse:true — ищем индекс в перевёрнутом списке
+    final idx = _messages.indexWhere((m) => m.id == messageId);
+    if (idx == -1) return;
+    final reversedIdx = _messages.length - 1 - idx;
     final key = _msgKeys[messageId];
     if (key?.currentContext == null) {
-      // Определяем направление: ищем индекс сообщения
-      final idx = _messages.indexWhere((m) => m.id == messageId);
-      if (idx == -1 || !_scrollCtrl.hasClients) return;
-      final total = _messages.length;
-      // Прыгаем к началу если сообщение в первой половине, иначе к концу
-      if (idx < total / 2) {
-        _scrollCtrl.jumpTo(0);
-      } else {
-        _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
-      }
-      // Ждём рендера
+      // Элемент вне viewport — прыгаем к краю и ждём рендера
+      _scrollCtrl.jumpTo(reversedIdx < _messages.length / 2
+          ? 0
+          : _scrollCtrl.position.maxScrollExtent);
       await WidgetsBinding.instance.endOfFrame;
       await WidgetsBinding.instance.endOfFrame;
     }
     final k = _msgKeys[messageId];
     if (k?.currentContext == null) return;
-    await Scrollable.ensureVisible(
-      k!.currentContext!,
-      duration: const Duration(milliseconds: 350),
-      curve: Curves.easeOut,
-      alignment: 0.3,
-    );
+    await Scrollable.ensureVisible(k!.currentContext!,
+        duration: const Duration(milliseconds: 350), curve: Curves.easeOut, alignment: 0.3);
     setState(() => _highlightedId = messageId);
     await Future.delayed(const Duration(milliseconds: 1200));
     if (mounted) setState(() => _highlightedId = null);
@@ -521,24 +492,15 @@ class _ChatScreenState extends State<ChatScreen> {
                     ? Center(
                         child: Text('Начните переписку',
                             style: TextStyle(color: AppTheme.textSecondary)))
-                    : AnimatedOpacity(
-                        opacity: _listVisible ? 1.0 : 0.0,
-                        duration: const Duration(milliseconds: 200),
-                        child: ListView.builder(
+                    : ListView.builder(
                           controller: _scrollCtrl,
+                          reverse: true,
                           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                           itemCount: _messages.length + (_uploading ? 1 : 0) + (_loadingMore ? 1 : 0),
                           itemBuilder: (_, i) {
-                            // Первый элемент — индикатор загрузки старых сообщений
-                            if (_loadingMore && i == 0) {
-                              return Padding(
-                                padding: EdgeInsets.symmetric(vertical: 12),
-                                child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2))),
-                              );
-                            }
-                            final msgIdx = _loadingMore ? i - 1 : i;
-                            // Последний элемент — превью загружаемого файла
-                            if (_uploading && msgIdx == _messages.length) {
+                            // reverse:true — i=0 это последнее (новое) сообщение
+                            // Первый элемент (i=0) — превью загружаемого файла
+                            if (_uploading && i == 0) {
                               return GestureDetector(
                                 onLongPress: _cancelUpload,
                                 child: _UploadingBubble(
@@ -547,6 +509,17 @@ class _ChatScreenState extends State<ChatScreen> {
                                 ),
                               );
                             }
+                            final uploadOffset = _uploading ? 1 : 0;
+                            // Последний элемент — индикатор загрузки старых сообщений (вверху)
+                            if (_loadingMore && i == _messages.length + uploadOffset) {
+                              return Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2))),
+                              );
+                            }
+                            // Индекс в _messages: reverse — новые в конце списка, i=0 = последнее
+                            final msgIdx = _messages.length - 1 - (i - uploadOffset);
+                            if (msgIdx < 0 || msgIdx >= _messages.length) return const SizedBox.shrink();
                             final msg = _messages[msgIdx];
                             final showDate = msgIdx == 0 ||
                                 !_sameDay(_messages[msgIdx - 1].createdAt, msg.createdAt);
@@ -564,7 +537,6 @@ class _ChatScreenState extends State<ChatScreen> {
                             );
                           },
                         ),
-                      ),
                 // Кнопка прокрутки вниз
                 AnimatedPositioned(
                   duration: const Duration(milliseconds: 200),
