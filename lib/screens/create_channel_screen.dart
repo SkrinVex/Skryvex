@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
+import 'adaptive_layout.dart';
 
 class CreateChannelScreen extends StatefulWidget {
   const CreateChannelScreen({super.key});
@@ -76,47 +77,49 @@ class _CreateChannelScreenState extends State<CreateChannelScreen> {
               : Text('Создать', style: TextStyle(color: accent)),
         )],
       ),
-      body: ListView(padding: const EdgeInsets.all(24), children: [
-        // Аватар
-        Center(child: GestureDetector(
-          onTap: _pickAvatar,
-          child: Stack(children: [
-            CircleAvatar(
-              radius: 44, backgroundColor: AppTheme.surfaceVariant,
-              backgroundImage: _avatarBytes != null ? MemoryImage(_avatarBytes!) : null,
-              child: _avatarBytes == null ? Icon(Icons.camera_alt, color: accent, size: 28) : null,
-            ),
-            Positioned(bottom: 0, right: 0, child: Container(
-              width: 26, height: 26,
-              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-              child: const Icon(Icons.edit, color: AppTheme.bg, size: 14),
-            )),
-          ]),
-        )),
-        const SizedBox(height: 24),
-        if (_error != null) ...[
-          Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
-            child: Text(_error!, style: const TextStyle(color: Colors.redAccent))),
-          const SizedBox(height: 16),
-        ],
-        const Text('Название', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-        const SizedBox(height: 6),
-        TextField(controller: _nameCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLength: 100,
-          decoration: const InputDecoration(hintText: 'Название канала', counterText: '')),
-        const SizedBox(height: 20),
-        const Text('Username', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-        const SizedBox(height: 6),
-        TextField(
-          controller: _usernameCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLength: 30,
-          inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9_]'))],
-          decoration: InputDecoration(hintText: 'channel_name', prefixText: '@', prefixStyle: TextStyle(color: accent), counterText: ''),
-        ),
-        const SizedBox(height: 20),
-        const Text('Описание (необязательно)', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-        const SizedBox(height: 6),
-        TextField(controller: _descCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLines: 3, maxLength: 500,
-          decoration: const InputDecoration(hintText: 'О чём этот канал?', counterText: '')),
-      ]),
+      body: Builder(builder: (context) {
+        final list = ListView(padding: const EdgeInsets.all(24), children: [
+          Center(child: GestureDetector(
+            onTap: _pickAvatar,
+            child: Stack(children: [
+              CircleAvatar(
+                radius: 44, backgroundColor: AppTheme.surfaceVariant,
+                backgroundImage: _avatarBytes != null ? MemoryImage(_avatarBytes!) : null,
+                child: _avatarBytes == null ? Icon(Icons.camera_alt, color: accent, size: 28) : null,
+              ),
+              Positioned(bottom: 0, right: 0, child: Container(
+                width: 26, height: 26,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                child: const Icon(Icons.edit, color: AppTheme.bg, size: 14),
+              )),
+            ]),
+          )),
+          const SizedBox(height: 24),
+          if (_error != null) ...[
+            Container(padding: const EdgeInsets.all(12), decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(8)),
+              child: Text(_error!, style: const TextStyle(color: Colors.redAccent))),
+            const SizedBox(height: 16),
+          ],
+          const Text('Название', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          const SizedBox(height: 6),
+          TextField(controller: _nameCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLength: 100,
+            decoration: const InputDecoration(hintText: 'Название канала', counterText: '')),
+          const SizedBox(height: 20),
+          const Text('Username', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          const SizedBox(height: 6),
+          TextField(
+            controller: _usernameCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLength: 30,
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9_]'))],
+            decoration: InputDecoration(hintText: 'channel_name', prefixText: '@', prefixStyle: TextStyle(color: accent), counterText: ''),
+          ),
+          const SizedBox(height: 20),
+          const Text('Описание (необязательно)', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          const SizedBox(height: 6),
+          TextField(controller: _descCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLines: 3, maxLength: 500,
+            decoration: const InputDecoration(hintText: 'О чём этот канал?', counterText: '')),
+        ]);
+        return isDesktop(context) ? Center(child: SizedBox(width: 520, child: list)) : list;
+      }),
     );
   }
 }
@@ -187,35 +190,38 @@ class _EditChannelScreenState extends State<EditChannelScreen> {
           child: Text('Готово', style: TextStyle(color: accent)),
         )],
       ),
-      body: ListView(padding: const EdgeInsets.all(24), children: [
-        Center(child: GestureDetector(
-          onTap: _uploadingAvatar ? null : _pickAvatar,
-          child: Stack(children: [
-            CircleAvatar(
-              radius: 44, backgroundColor: AppTheme.surfaceVariant,
-              backgroundImage: _avatarUrl != null ? CachedNetworkImageProvider(_avatarUrl!, cacheKey: 'ch_avatar_${widget.channel.id}') : null,
-              child: _avatarUrl == null ? Icon(Icons.camera_alt, color: accent, size: 28) : null,
-            ),
-            Positioned(bottom: 0, right: 0, child: Container(
-              width: 26, height: 26,
-              decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
-              child: _uploadingAvatar
-                  ? const Padding(padding: EdgeInsets.all(5), child: CircularProgressIndicator(color: AppTheme.bg, strokeWidth: 2))
-                  : const Icon(Icons.edit, color: AppTheme.bg, size: 14),
-            )),
-          ]),
-        )),
-        const SizedBox(height: 24),
-        const Text('Название', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-        const SizedBox(height: 6),
-        TextField(controller: _nameCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLength: 100,
-          decoration: const InputDecoration(counterText: '')),
-        const SizedBox(height: 20),
-        const Text('Описание', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-        const SizedBox(height: 6),
-        TextField(controller: _descCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLines: 3, maxLength: 500,
-          decoration: const InputDecoration(counterText: '')),
-      ]),
+      body: Builder(builder: (context) {
+        final list = ListView(padding: const EdgeInsets.all(24), children: [
+          Center(child: GestureDetector(
+            onTap: _uploadingAvatar ? null : _pickAvatar,
+            child: Stack(children: [
+              CircleAvatar(
+                radius: 44, backgroundColor: AppTheme.surfaceVariant,
+                backgroundImage: _avatarUrl != null ? CachedNetworkImageProvider(_avatarUrl!, cacheKey: 'ch_avatar_${widget.channel.id}') : null,
+                child: _avatarUrl == null ? Icon(Icons.camera_alt, color: accent, size: 28) : null,
+              ),
+              Positioned(bottom: 0, right: 0, child: Container(
+                width: 26, height: 26,
+                decoration: BoxDecoration(color: accent, shape: BoxShape.circle),
+                child: _uploadingAvatar
+                    ? const Padding(padding: EdgeInsets.all(5), child: CircularProgressIndicator(color: AppTheme.bg, strokeWidth: 2))
+                    : const Icon(Icons.edit, color: AppTheme.bg, size: 14),
+              )),
+            ]),
+          )),
+          const SizedBox(height: 24),
+          const Text('Название', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          const SizedBox(height: 6),
+          TextField(controller: _nameCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLength: 100,
+            decoration: const InputDecoration(counterText: '')),
+          const SizedBox(height: 20),
+          const Text('Описание', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          const SizedBox(height: 6),
+          TextField(controller: _descCtrl, style: const TextStyle(color: AppTheme.textPrimary), maxLines: 3, maxLength: 500,
+            decoration: const InputDecoration(counterText: '')),
+        ]);
+        return isDesktop(context) ? Center(child: SizedBox(width: 520, child: list)) : list;
+      }),
     );
   }
 }

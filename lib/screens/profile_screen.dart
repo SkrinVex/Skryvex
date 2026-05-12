@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
+import 'adaptive_layout.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -130,6 +131,56 @@ class _ProfileScreenState extends State<ProfileScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
+  Widget _buildList() => ListView(
+    padding: const EdgeInsets.all(24),
+    children: [
+      Center(
+        child: GestureDetector(
+          onTap: _uploadingAvatar ? null : _pickAvatar,
+          child: Stack(children: [
+            CircleAvatar(
+              radius: 48,
+              backgroundColor: AppTheme.surfaceVariant,
+              backgroundImage: _user?.avatarUrl != null
+                  ? CachedNetworkImageProvider(_user!.avatarUrl!, cacheKey: 'avatar_me')
+                  : null,
+              child: _user?.avatarUrl == null
+                  ? Text(_user?.name.isNotEmpty == true ? _user!.name[0].toUpperCase() : '?',
+                      style: TextStyle(color: AppTheme.orange, fontSize: 32, fontWeight: FontWeight.w600))
+                  : null,
+            ),
+            Positioned(
+              bottom: 0, right: 0,
+              child: Container(
+                width: 28, height: 28,
+                decoration: BoxDecoration(color: AppTheme.orange, shape: BoxShape.circle),
+                child: _uploadingAvatar
+                    ? const Padding(padding: EdgeInsets.all(6), child: CircularProgressIndicator(color: AppTheme.bg, strokeWidth: 2))
+                    : const Icon(Icons.camera_alt, color: AppTheme.bg, size: 16),
+              ),
+            ),
+          ]),
+        ),
+      ),
+      const SizedBox(height: 8),
+      Center(child: _BlurredEmail(email: _user?.email ?? '')),
+      const SizedBox(height: 32),
+      const Text('Имя', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+      const SizedBox(height: 6),
+      TextField(controller: _nameCtrl, style: const TextStyle(color: AppTheme.textPrimary), decoration: const InputDecoration(hintText: 'Ваше имя')),
+      const SizedBox(height: 20),
+      const Text('Username', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+      const SizedBox(height: 6),
+      TextField(
+        controller: _usernameCtrl,
+        style: const TextStyle(color: AppTheme.textPrimary),
+        maxLength: 30,
+        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9_]'))],
+        decoration: InputDecoration(hintText: 'username (необязательно)', prefixText: '@', prefixStyle: TextStyle(color: AppTheme.orange), counterText: ''),
+      ),
+    ],
+  );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -147,76 +198,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
       ),
       body: _loading
           ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
-          : ListView(
-              padding: const EdgeInsets.all(24),
-              children: [
-                // Аватар
-                Center(
-                  child: GestureDetector(
-                    onTap: _uploadingAvatar ? null : _pickAvatar,
-                    child: Stack(
-                      children: [
-                        CircleAvatar(
-                          radius: 48,
-                          backgroundColor: AppTheme.surfaceVariant,
-                          backgroundImage: _user?.avatarUrl != null
-                              ? CachedNetworkImageProvider(_user!.avatarUrl!, cacheKey: 'avatar_me')
-                              : null,
-                          child: _user?.avatarUrl == null
-                              ? Text(
-                                  _user?.name.isNotEmpty == true ? _user!.name[0].toUpperCase() : '?',
-                                  style: TextStyle(color: AppTheme.orange, fontSize: 32, fontWeight: FontWeight.w600),
-                                )
-                              : null,
-                        ),
-                        Positioned(
-                          bottom: 0, right: 0,
-                          child: Container(
-                            width: 28, height: 28,
-                            decoration: BoxDecoration(color: AppTheme.orange, shape: BoxShape.circle),
-                            child: _uploadingAvatar
-                                ? const Padding(
-                                    padding: EdgeInsets.all(6),
-                                    child: CircularProgressIndicator(color: AppTheme.bg, strokeWidth: 2),
-                                  )
-                                : const Icon(Icons.camera_alt, color: AppTheme.bg, size: 16),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Center(child: _BlurredEmail(email: _user?.email ?? '')),
-                const SizedBox(height: 32),
-                // Имя
-                const Text('Имя', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _nameCtrl,
-                  style: const TextStyle(color: AppTheme.textPrimary),
-                  decoration: const InputDecoration(hintText: 'Ваше имя'),
-                ),
-                const SizedBox(height: 20),
-                // Username
-                const Text('Username', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                const SizedBox(height: 6),
-                TextField(
-                  controller: _usernameCtrl,
-                  style: const TextStyle(color: AppTheme.textPrimary),
-                  maxLength: 30,
-                  inputFormatters: [
-                    FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9_]')),
-                  ],
-                  decoration: InputDecoration(
-                    hintText: 'username (необязательно)',
-                    prefixText: '@',
-                    prefixStyle: TextStyle(color: AppTheme.orange),
-                    counterText: '',
-                  ),
-                ),
-              ],
-            ),
+          : isDesktop(context)
+              ? Center(child: SizedBox(width: 520, child: _buildList()))
+              : _buildList(),
     );
   }
 }

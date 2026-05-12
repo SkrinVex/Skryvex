@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../services/app_settings.dart';
 import '../theme.dart';
+import 'adaptive_layout.dart';
 
 class CustomizationScreen extends StatefulWidget {
   const CustomizationScreen({super.key});
@@ -17,7 +18,13 @@ class _CustomizationScreenState extends State<CustomizationScreen> {
 
     return Scaffold(
       appBar: AppBar(title: const Text('Кастомизация')),
-      body: ListView(
+      body: isDesktop(context)
+          ? Center(child: SizedBox(width: 520, child: _buildList(settings, accentColor)))
+          : _buildList(settings, accentColor),
+    );
+  }
+
+  Widget _buildList(AppSettings settings, Color accentColor) => ListView(
         children: [
           const SizedBox(height: 8),
           // Компактная навигация
@@ -54,7 +61,5 @@ class _CustomizationScreenState extends State<CustomizationScreen> {
             );
           }),
         ],
-      ),
-    );
-  }
+      );
 }

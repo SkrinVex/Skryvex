@@ -18,6 +18,7 @@ import 'download_sheet.dart';
 import 'reactions_widget.dart';
 import 'media_caption_sheet.dart';
 import 'create_channel_screen.dart';
+import 'adaptive_layout.dart';
 
 class ChannelScreen extends StatefulWidget {
   final ChannelModel channel;
@@ -343,7 +344,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
           ),
         ],
       ),
-      body: Column(children: [
+      body: Center(
+        child: SizedBox(
+          width: isDesktop(context) ? 760 : double.infinity,
+          child: Column(children: [
         Expanded(child: _loading
           ? Center(child: CircularProgressIndicator(color: accent))
           : ListView.builder(
@@ -393,6 +397,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
         if (!_isOwner && !_isSubscribed)
           _SubscribeBar(onSubscribe: _subscribe, loading: _subscribing),
       ]),
+        ),
+      ),
     );
   }
 
@@ -787,21 +793,26 @@ class _SubscribeBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: SafeArea(
         top: false,
-        child: SizedBox(
-          width: double.infinity,
-          height: 50,
-          child: ElevatedButton(
-            onPressed: loading ? null : onSubscribe,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: accent,
-              foregroundColor: AppTheme.bg,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-              elevation: 0,
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            SizedBox(
+              width: isDesktop(context) ? 280 : double.infinity,
+              height: 50,
+              child: ElevatedButton(
+                onPressed: loading ? null : onSubscribe,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: accent,
+                  foregroundColor: AppTheme.bg,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                  elevation: 0,
+                ),
+                child: loading
+                    ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.bg, strokeWidth: 2))
+                    : const Text('Подписаться', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+              ),
             ),
-            child: loading
-                ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.bg, strokeWidth: 2))
-                : const Text('Подписаться', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-          ),
+          ],
         ),
       ),
     );

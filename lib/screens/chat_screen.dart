@@ -18,6 +18,7 @@ import 'media_viewer.dart';
 import 'download_sheet.dart';
 import 'reactions_widget.dart';
 import 'media_caption_sheet.dart';
+import 'adaptive_layout.dart';
 
 class ChatScreen extends StatefulWidget {
   final int chatId;
@@ -485,8 +486,11 @@ class _ChatScreenState extends State<ChatScreen> {
           borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
         ),
       ),
-      body: Column(
-        children: [
+      body: Center(
+        child: SizedBox(
+          width: isDesktop(context) ? 760 : double.infinity,
+          child: Column(
+          children: [
           Expanded(
             child: Stack(
               children: [
@@ -571,6 +575,8 @@ class _ChatScreenState extends State<ChatScreen> {
             hasReply: _replyTo != null,
           ),
         ],
+      ),
+        ),
       ),
     );
   }

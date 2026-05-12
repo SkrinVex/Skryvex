@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
+import 'adaptive_layout.dart';
 
 class ForgotPasswordScreen extends StatefulWidget {
   const ForgotPasswordScreen({super.key});
@@ -36,15 +37,13 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Сброс пароля')),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
-          child: _sent ? _successState() : _formState(),
-        ),
-      ),
+    final desktop = isDesktop(context);
+    final body = SafeArea(
+      child: desktop
+          ? adaptiveFormBody(context: context, child: _sent ? _successState() : _formState())
+          : Padding(padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24), child: _sent ? _successState() : _formState()),
     );
+    return Scaffold(appBar: AppBar(title: const Text('Сброс пароля')), body: body);
   }
 
   Widget _formState() {
