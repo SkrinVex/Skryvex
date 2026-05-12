@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:web_socket_channel/web_socket_channel.dart';
 import '../theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -71,11 +73,39 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
 
   List<ChatModel> _chats = [];
   bool _loading = true;
+  WebSocketChannel? _ws;
 
   @override
   void initState() {
     super.initState();
     _loadChats();
+  }
+
+  Future<void> _connectWs() async {
+    if (_ws != null) {
+      // Уже подключены — просто джойнимся в новые чаты
+      for (final chat in _chats) {
+        _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': chat.id}));
+      }
+      return;
+    }
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('token');
+    if (token == null) return;
+    _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
+    _ws!.stream.listen((raw) {
+      final msg = jsonDecode(raw as String) as Map<String, dynamic>;
+      if (msg['type'] == 'message') _refreshChatsBackground();
+    }, onError: (_) {}, onDone: () {});
+    for (final chat in _chats) {
+      _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': chat.id}));
+    }
+  }
+
+  @override
+  void dispose() {
+    _ws?.sink.close();
+    super.dispose();
   }
 
   Future<void> _loadChats({bool forceRefresh = false}) async {
@@ -88,12 +118,14 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
           _loading = false;
         });
         // Обновляем в фоне без индикатора
-        _refreshChatsBackground();
+        await _refreshChatsBackground();
+        _connectWs();
         return;
       }
     }
     setState(() => _loading = true);
     await _refreshChatsBackground();
+    _connectWs();
   }
 
   Future<void> _refreshChatsBackground() async {

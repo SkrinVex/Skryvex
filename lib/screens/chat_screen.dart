@@ -6,9 +6,9 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:http/http.dart' as http;
 import 'package:cached_network_image/cached_network_image.dart';
 import '../services/video_thumb.dart';
+import '../services/upload_service.dart';
 import '../theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -34,11 +34,15 @@ class _ChatScreenState extends State<ChatScreen> {
   WebSocketChannel? _ws;
   int? _myId;
   bool _loading = true;
+  bool _listVisible = false;
+  bool _loadingMore = false;
+  bool _hasMore = true;
+  bool _showScrollDown = false;
+  static const _pageSize = 40;
   MessageModel? _replyTo;
   int? _highlightedId;
   bool _uploading = false;
   double _uploadProgress = 0;
-  http.Client? _uploadClient;
   Uint8List? _uploadPreviewBytes; // локальный превью до получения WS
   double _lastBottomInset = 0;
 
@@ -71,7 +75,31 @@ class _ChatScreenState extends State<ChatScreen> {
     if (userJson != null) {
       _myId = (jsonDecode(userJson) as Map<String, dynamic>)['id'] as int?;
     }
-    await _loadMessages();
+    await _loadInitial();
+    // Восстанавливаем состояние загрузки если она идёт в фоне
+    final existing = UploadService.instance.stateFor(widget.chatId);
+    if (existing != null && mounted) {
+      setState(() {
+        _uploading = true;
+        _uploadProgress = existing.progress;
+        _uploadPreviewBytes = existing.previewBytes;
+      });
+      final notifier = UploadService.instance.notifierFor(widget.chatId);
+      void onProgress() {
+        final s = notifier.value;
+        if (!mounted) return;
+        if (s == null) {
+          setState(() { _uploading = false; _uploadProgress = 0; _uploadPreviewBytes = null; });
+        } else {
+          setState(() {
+            _uploadProgress = s.progress;
+            if (s.previewBytes != null) _uploadPreviewBytes = s.previewBytes;
+          });
+        }
+      }
+      notifier.addListener(onProgress);
+    }
+    _scrollCtrl.addListener(_onScroll);
     if (token != null) {
       _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
       _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': widget.chatId}));
@@ -79,39 +107,63 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  Future<void> _loadMessages() async {
-    // Показываем кэш мгновенно
-    final cached = await CacheService.loadMessages(widget.chatId);
-    if (cached != null && mounted) {
-      final msgs = cached.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)).toList();
+  void _onScroll() {
+    // Догрузка старых сообщений при прокрутке вверх
+    if (_scrollCtrl.position.pixels < 200 && !_loadingMore && _hasMore) {
+      _loadMore();
+    }
+    // Кнопка прокрутки вниз
+    final distFromBottom = _scrollCtrl.position.maxScrollExtent - _scrollCtrl.position.pixels;
+    final show = distFromBottom > 400;
+    if (show != _showScrollDown) setState(() => _showScrollDown = show);
+  }
+
+  Future<void> _loadInitial() async {
+    try {
+      final data = await ApiService.get(
+        '/chats/${widget.chatId}/messages?limit=$_pageSize',
+      ) as List<dynamic>;
+      await CacheService.saveMessages(widget.chatId, data);
+      final msgs = data.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)).toList();
+      if (!mounted) return;
+      for (final m in msgs) { _msgKeys[m.id] = GlobalKey(); }
       setState(() {
         _messages.clear();
         _messages.addAll(msgs);
-        for (final m in msgs) {
-          _msgKeys[m.id] = GlobalKey();
-        }
         _loading = false;
+        _hasMore = msgs.length == _pageSize;
+        _listVisible = false;
       });
-      _scrollToBottom();
-    }
-    // Всегда грузим свежие с сервера
-    try {
-      final data = await ApiService.get('/chats/${widget.chatId}/messages') as List<dynamic>;
-      await CacheService.saveMessages(widget.chatId, data);
-      final msgs = data.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)).toList();
-      if (mounted) {
-        setState(() {
-          _messages.clear();
-          _messages.addAll(msgs);
-          for (final m in msgs) {
-            _msgKeys[m.id] = GlobalKey();
-          }
-          _loading = false;
-        });
-        _scrollToBottom();
-      }
+      _scrollToBottom(jump: true);
+      if (mounted) setState(() => _listVisible = true);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _loadMore() async {
+    if (_loadingMore || !_hasMore || _messages.isEmpty) return;
+    setState(() => _loadingMore = true);
+    final beforeId = _messages.first.id;
+    try {
+      final data = await ApiService.get(
+        '/chats/${widget.chatId}/messages?limit=$_pageSize&before=$beforeId',
+      ) as List<dynamic>;
+      final msgs = data.map((e) => MessageModel.fromJson(e as Map<String, dynamic>)).toList();
+      if (!mounted) return;
+      for (final m in msgs) { _msgKeys[m.id] = GlobalKey(); }
+      final prevExtent = _scrollCtrl.position.maxScrollExtent;
+      setState(() {
+        _messages.insertAll(0, msgs);
+        _hasMore = msgs.length == _pageSize;
+        _loadingMore = false;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!_scrollCtrl.hasClients) return;
+        _scrollCtrl.jumpTo(_scrollCtrl.offset + (_scrollCtrl.position.maxScrollExtent - prevExtent));
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loadingMore = false);
     }
   }
 
@@ -120,14 +172,16 @@ class _ChatScreenState extends State<ChatScreen> {
     if (msg['type'] == 'message') {
       final m = MessageModel.fromJson(msg);
       if (m.chatId == widget.chatId) {
+        // Если это наше медиа-сообщение — скрываем bubble только после добавления в список
+        final wasUploading = _uploading && m.senderId == _myId && m.mediaType != null;
         setState(() {
           _messages.add(m);
           _msgKeys[m.id] = GlobalKey();
+          if (wasUploading) { _uploading = false; _uploadProgress = 0; _uploadPreviewBytes = null; }
         });
         _scrollToBottom();
         CacheService.invalidateMessages(widget.chatId);
         CacheService.invalidateChats();
-        ApiService.get('/chats/${widget.chatId}/messages?limit=1').catchError((_) => null);
       }
     }
     if (msg['type'] == 'message_deleted') {
@@ -137,11 +191,13 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
-  void _scrollToBottom() {
-    // Двойной postFrameCallback — ждём пока все виджеты с фиксированной высотой отрендерятся
+  void _scrollToBottom({bool jump = false}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (_scrollCtrl.hasClients) {
+        if (!_scrollCtrl.hasClients) return;
+        if (jump) {
+          _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
+        } else {
           _scrollCtrl.animateTo(
             _scrollCtrl.position.maxScrollExtent,
             duration: const Duration(milliseconds: 250),
@@ -153,10 +209,27 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Future<void> _scrollToMessage(int messageId) async {
+    // Если ключ не в дереве — элемент вне viewport, прыгаем к краю и ждём рендера
     final key = _msgKeys[messageId];
-    if (key?.currentContext == null) return;
+    if (key?.currentContext == null) {
+      // Определяем направление: ищем индекс сообщения
+      final idx = _messages.indexWhere((m) => m.id == messageId);
+      if (idx == -1 || !_scrollCtrl.hasClients) return;
+      final total = _messages.length;
+      // Прыгаем к началу если сообщение в первой половине, иначе к концу
+      if (idx < total / 2) {
+        _scrollCtrl.jumpTo(0);
+      } else {
+        _scrollCtrl.jumpTo(_scrollCtrl.position.maxScrollExtent);
+      }
+      // Ждём рендера
+      await WidgetsBinding.instance.endOfFrame;
+      await WidgetsBinding.instance.endOfFrame;
+    }
+    final k = _msgKeys[messageId];
+    if (k?.currentContext == null) return;
     await Scrollable.ensureVisible(
-      key!.currentContext!,
+      k!.currentContext!,
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeOut,
       alignment: 0.3,
@@ -180,85 +253,58 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _pickAndSendMedia(ImageSource source, {bool video = false}) async {
     final picker = ImagePicker();
-    XFile? file;
-    if (video) {
-      file = await picker.pickVideo(source: source, maxDuration: const Duration(minutes: 5));
-    } else {
-      file = await picker.pickImage(source: source, imageQuality: 85);
-    }
+    final file = video
+        ? await picker.pickVideo(source: source, maxDuration: const Duration(minutes: 5))
+        : await picker.pickImage(source: source, imageQuality: 85);
     if (file == null) return;
-
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('token');
-    if (token == null) return;
 
     final bytes = await file.readAsBytes();
     final replyToId = _replyTo?.id;
+    setState(() { _replyTo = null; _uploading = true; _uploadProgress = 0; });
 
-    setState(() {
-      _replyTo = null;
-      _uploading = true;
-      _uploadProgress = 0;
-      if (!video) _uploadPreviewBytes = bytes;
-    });
-
-    // Для видео — генерируем превью из локального файла
-    if (video) {
+    Uint8List? preview;
+    if (!video) {
+      preview = bytes;
+      _uploadPreviewBytes = bytes;
+    } else {
       _generateLocalVideoThumb(file.path);
     }
     _scrollToBottom();
 
-    _uploadClient = http.Client();
-    try {
-      final request = http.MultipartRequest(
-        'POST',
-        Uri.parse('${ApiService.baseUrl}/chats/${widget.chatId}/media'),
-      );
-      request.headers['Authorization'] = 'Bearer $token';
-      request.files.add(http.MultipartFile.fromBytes('file', bytes, filename: file.name));
-      if (replyToId != null) request.fields['reply_to_id'] = '$replyToId';
-
-      final total = bytes.length.toDouble();
-
-      // Эмулируем прогресс по отправленным байтам через stream
-      final streamedResponse = await _uploadClient!.send(request);
-
-      // Прогресс: считаем по contentLength запроса (bytes.length)
-      // http пакет не даёт upload progress напрямую, поэтому анимируем
-      // от 0 до 95% за время отправки, потом 100% при получении ответа
-      final duration = Duration(milliseconds: (total / 50000 * 1000).clamp(500, 8000).toInt());
-      final steps = 20;
-      for (int i = 1; i <= steps; i++) {
-        await Future.delayed(Duration(milliseconds: duration.inMilliseconds ~/ steps));
-        if (!mounted || !_uploading) break;
-        setState(() => _uploadProgress = (i / steps * 0.95).clamp(0.0, 0.95));
+    // Слушаем прогресс из сервиса
+    final notifier = UploadService.instance.notifierFor(widget.chatId);
+    void onProgress() {
+      final s = notifier.value;
+      if (!mounted) return;
+      if (s == null) {
+        setState(() { _uploading = false; _uploadProgress = 0; _uploadPreviewBytes = null; });
+      } else {
+        setState(() {
+          _uploadProgress = s.progress;
+          if (s.previewBytes != null) _uploadPreviewBytes = s.previewBytes;
+        });
       }
+    }
+    notifier.addListener(onProgress);
 
-      await streamedResponse.stream.drain();
-
-      if (mounted) setState(() => _uploadProgress = 1.0);
-      await Future.delayed(const Duration(milliseconds: 300));
-
-      if (streamedResponse.statusCode != 201 && mounted) {
+    try {
+      await UploadService.instance.upload(
+        chatId: widget.chatId,
+        bytes: bytes,
+        filename: file.name,
+        isVideo: video,
+        previewBytes: preview,
+        replyToId: replyToId,
+      );
+    } catch (_) {
+      if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Ошибка отправки файла')),
         );
       }
-    } catch (e) {
-      if (mounted && _uploading) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Отправка отменена')),
-        );
-      }
     } finally {
-      _uploadClient = null;
-      if (mounted) {
-        setState(() {
-          _uploading = false;
-          _uploadProgress = 0;
-          _uploadPreviewBytes = null;
-        });
-      }
+      notifier.removeListener(onProgress);
+      if (mounted) setState(() { _uploading = false; _uploadProgress = 0; _uploadPreviewBytes = null; });
     }
   }
 
@@ -328,13 +374,15 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _cancelUpload() {
-    _uploadClient?.close();
-    _uploadClient = null;
+    UploadService.instance.cancel(widget.chatId);
   }
 
   Future<void> _generateLocalVideoThumb(String path) async {
     final thumb = await generateLocalVideoThumbnail(path);
-    if (mounted && thumb != null) setState(() => _uploadPreviewBytes = thumb);
+    if (thumb != null) {
+      UploadService.instance.updatePreview(widget.chatId, thumb);
+      if (mounted) setState(() => _uploadPreviewBytes = thumb);
+    }
   }
 
   void _showMediaPicker() {
@@ -371,6 +419,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    _scrollCtrl.removeListener(_onScroll);
     _ws?.sink.close();
     _msgCtrl.dispose();
     _scrollCtrl.dispose();
@@ -390,44 +439,72 @@ class _ChatScreenState extends State<ChatScreen> {
       body: Column(
         children: [
           Expanded(
-            child: _loading
+            child: Stack(
+              children: [
+                _loading
                 ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
                 : _messages.isEmpty
                     ? Center(
                         child: Text('Начните переписку',
                             style: TextStyle(color: AppTheme.textSecondary)))
-                    : ListView.builder(
-                        controller: _scrollCtrl,
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        itemCount: _messages.length + (_uploading ? 1 : 0),
-                        itemBuilder: (_, i) {
-                          // Последний элемент — превью загружаемого файла
-                          if (_uploading && i == _messages.length) {
-                            return GestureDetector(
-                              onLongPress: _cancelUpload,
-                              child: _UploadingBubble(
-                                previewBytes: _uploadPreviewBytes,
-                                progress: _uploadProgress,
-                              ),
+                    : AnimatedOpacity(
+                        opacity: _listVisible ? 1.0 : 0.0,
+                        duration: const Duration(milliseconds: 200),
+                        child: ListView.builder(
+                          controller: _scrollCtrl,
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          itemCount: _messages.length + (_uploading ? 1 : 0) + (_loadingMore ? 1 : 0),
+                          itemBuilder: (_, i) {
+                            // Первый элемент — индикатор загрузки старых сообщений
+                            if (_loadingMore && i == 0) {
+                              return const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 12),
+                                child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2))),
+                              );
+                            }
+                            final msgIdx = _loadingMore ? i - 1 : i;
+                            // Последний элемент — превью загружаемого файла
+                            if (_uploading && msgIdx == _messages.length) {
+                              return GestureDetector(
+                                onLongPress: _cancelUpload,
+                                child: _UploadingBubble(
+                                  previewBytes: _uploadPreviewBytes,
+                                  progress: _uploadProgress,
+                                ),
+                              );
+                            }
+                            final msg = _messages[msgIdx];
+                            final showDate = msgIdx == 0 ||
+                                !_sameDay(_messages[msgIdx - 1].createdAt, msg.createdAt);
+                            return _SwipeableMessage(
+                              key: _msgKeys[msg.id],
+                              message: msg,
+                              isMe: msg.senderId == _myId,
+                              showDate: showDate,
+                              isHighlighted: _highlightedId == msg.id,
+                              onReply: () => setState(() => _replyTo = msg),
+                              onLongPress: () => _showMessageMenu(context, msg),
+                              onTapReply: msg.replyToId != null
+                                  ? () => _scrollToMessage(msg.replyToId!)
+                                  : null,
                             );
-                          }
-                          final msg = _messages[i];
-                          final showDate = i == 0 ||
-                              !_sameDay(_messages[i - 1].createdAt, msg.createdAt);
-                          return _SwipeableMessage(
-                            key: _msgKeys[msg.id],
-                            message: msg,
-                            isMe: msg.senderId == _myId,
-                            showDate: showDate,
-                            isHighlighted: _highlightedId == msg.id,
-                            onReply: () => setState(() => _replyTo = msg),
-                            onLongPress: () => _showMessageMenu(context, msg),
-                            onTapReply: msg.replyToId != null
-                                ? () => _scrollToMessage(msg.replyToId!)
-                                : null,
-                          );
-                        },
+                          },
+                        ),
                       ),
+                // Кнопка прокрутки вниз
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 200),
+                  curve: Curves.easeOut,
+                  bottom: _showScrollDown ? 12 : -56,
+                  right: 12,
+                  child: FloatingActionButton.small(
+                    backgroundColor: AppTheme.surface,
+                    onPressed: _scrollToBottom,
+                    child: const Icon(Icons.keyboard_arrow_down, color: AppTheme.orange),
+                  ),
+                ),
+              ],
+            ),
           ),
           if (_replyTo != null) _ReplyPreview(
             message: _replyTo!,
@@ -986,7 +1063,10 @@ class _ReplyPreview extends StatelessWidget {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        color: AppTheme.surface,
+        decoration: BoxDecoration(
+          color: AppTheme.surface,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
+        ),
         padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
         child: Row(
           children: [
