@@ -16,6 +16,7 @@ import '../services/api_service.dart';
 import '../services/cache_service.dart';
 import 'media_viewer.dart';
 import 'download_sheet.dart';
+import 'reactions_widget.dart';
 import 'media_caption_sheet.dart';
 
 class ChatScreen extends StatefulWidget {
@@ -180,6 +181,12 @@ class _ChatScreenState extends State<ChatScreen> {
       setState(() => _messages.removeWhere((m) => m.id == id));
       CacheService.invalidateMessages(widget.chatId);
     }
+    if (msg['type'] == 'reaction_update') {
+      final msgId = msg['message_id'] as int;
+      final reactions = (msg['reactions'] as List).map((e) => ReactionModel.fromJson(e as Map<String, dynamic>)).toList();
+      final idx = _messages.indexWhere((m) => m.id == msgId);
+      if (idx != -1 && mounted) setState(() => _messages[idx] = _messages[idx].copyWithReactions(reactions));
+    }
   }
 
   void _scrollToBottom({bool jump = false}) {
@@ -330,57 +337,40 @@ class _ChatScreenState extends State<ChatScreen> {
   void _showMessageMenu(BuildContext context, MessageModel msg) {
     final isMe = msg.senderId == _myId;
     final hasMedia = msg.mediaUrl != null && !msg.mediaDeleted;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      builder: (_) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: Icon(Icons.reply, color: AppTheme.orange),
-              title: const Text('Ответить', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () {
-                Navigator.pop(context);
-                setState(() => _replyTo = msg);
-              },
-            ),
-            if (msg.text != null && msg.text!.isNotEmpty) ListTile(
-              leading: Icon(Icons.copy, color: AppTheme.orange),
-              title: const Text('Копировать', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () {
-                Navigator.pop(context);
-                Clipboard.setData(ClipboardData(text: msg.text!));
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Сообщение скопировано')),
-                );
-              },
-            ),
-            if (hasMedia) ListTile(
-              leading: Icon(Icons.download, color: AppTheme.orange),
-              title: const Text('Сохранить', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () {
-                Navigator.pop(context);
-                final ext = msg.mediaType == 'video' ? 'mp4' : 'jpg';
-                final filename = '${msg.mediaType}_${msg.id}.$ext';
-                showDownloadSheet(context, url: msg.mediaUrl!, filename: filename);
-              },
-            ),
-            if (isMe) ListTile(
-              leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
-              title: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
-              onTap: () {
-                Navigator.pop(context);
-                _deleteMessage(msg);
-              },
-            ),
-          ],
+    showReactionPickerWithMenu(
+      context,
+      menuItems: [
+        ListTile(
+          leading: Icon(Icons.reply, color: AppTheme.orange),
+          title: const Text('Ответить', style: TextStyle(color: AppTheme.textPrimary)),
+          onTap: () { Navigator.pop(context); setState(() => _replyTo = msg); },
         ),
-      ),
-    );
+        if (msg.text != null && msg.text!.isNotEmpty) ListTile(
+          leading: Icon(Icons.copy, color: AppTheme.orange),
+          title: const Text('Копировать', style: TextStyle(color: AppTheme.textPrimary)),
+          onTap: () { Navigator.pop(context); Clipboard.setData(ClipboardData(text: msg.text!)); ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Сообщение скопировано'))); },
+        ),
+        if (hasMedia) ListTile(
+          leading: Icon(Icons.download, color: AppTheme.orange),
+          title: const Text('Сохранить', style: TextStyle(color: AppTheme.textPrimary)),
+          onTap: () { Navigator.pop(context); showDownloadSheet(context, url: msg.mediaUrl!, filename: '${msg.mediaType}_${msg.id}.${msg.mediaType == 'video' ? 'mp4' : 'jpg'}'); },
+        ),
+        if (isMe) ListTile(
+          leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
+          title: const Text('Удалить', style: TextStyle(color: Colors.redAccent)),
+          onTap: () { Navigator.pop(context); _deleteMessage(msg); },
+        ),
+      ],
+    ).then((emoji) { if (emoji != null) _toggleReaction(msg.id, emoji); });
+  }
+
+  Future<void> _toggleReaction(int messageId, String emoji) async {
+    try {
+      final data = await ApiService.post('/chats/${widget.chatId}/messages/$messageId/react', {'emoji': emoji});
+      final reactions = (data['reactions'] as List).map((e) => ReactionModel.fromJson(e as Map<String, dynamic>)).toList();
+      final idx = _messages.indexWhere((m) => m.id == messageId);
+      if (idx != -1 && mounted) setState(() => _messages[idx] = _messages[idx].copyWithReactions(reactions));
+    } catch (_) {}
   }
 
   void _cancelUpload() {
@@ -548,6 +538,7 @@ class _ChatScreenState extends State<ChatScreen> {
                               onTapReply: msg.replyToId != null
                                   ? () => _scrollToMessage(msg.replyToId!)
                                   : null,
+                              onReact: (emoji) => _toggleReaction(msg.id, emoji),
                             );
                           },
                         ),
@@ -598,6 +589,7 @@ class _SwipeableMessage extends StatefulWidget {
   final VoidCallback onReply;
   final VoidCallback onLongPress;
   final VoidCallback? onTapReply;
+  final void Function(String)? onReact;
 
   const _SwipeableMessage({
     super.key,
@@ -608,6 +600,7 @@ class _SwipeableMessage extends StatefulWidget {
     required this.onReply,
     required this.onLongPress,
     this.onTapReply,
+    this.onReact,
   });
 
   @override
@@ -808,6 +801,15 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
             ),
           ),
         ),
+        // Реакции под bubble
+        if (widget.message.reactions.isNotEmpty)
+          Align(
+            alignment: widget.isMe ? Alignment.centerRight : Alignment.centerLeft,
+            child: ChatReactionsRow(
+              reactions: widget.message.reactions,
+              onTap: (emoji) => widget.onReact?.call(emoji),
+            ),
+          ),
       ],
     );
   }

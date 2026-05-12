@@ -15,6 +15,7 @@ import '../theme.dart';
 import 'media_viewer.dart';
 import 'download_sheet.dart';
 
+import 'reactions_widget.dart';
 import 'media_caption_sheet.dart';
 import 'create_channel_screen.dart';
 
@@ -38,6 +39,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
   bool _loadingMore = false;
   bool _hasMore = true;
   bool _isOwner = false;
+  bool _isSubscribed = false;
+  bool _subscribing = false;
   bool _uploading = false;
   double _uploadProgress = 0;
   Uint8List? _uploadPreview;
@@ -60,6 +63,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     if (userJson != null) {
       _myId = (jsonDecode(userJson) as Map<String, dynamic>)['id'] as int?;
       _isOwner = _myId == _channel.ownerId;
+      _isSubscribed = _channel.subscribed || _isOwner;
     }
     await _loadPosts();
     _scrollCtrl.addListener(_onScroll);
@@ -118,6 +122,12 @@ class _ChannelScreenState extends State<ChannelScreen> {
     if (msg['type'] == 'channel_post_deleted') {
       final id = msg['id'] as int;
       setState(() => _posts.removeWhere((p) => p.id == id));
+    }
+    if (msg['type'] == 'post_reaction_update') {
+      final postId = msg['post_id'] as int;
+      final reactions = (msg['reactions'] as List).map((e) => ReactionModel.fromJson(e as Map<String, dynamic>)).toList();
+      final idx = _posts.indexWhere((p) => p.id == postId);
+      if (idx != -1 && mounted) setState(() => _posts[idx] = _posts[idx].copyWithReactions(reactions));
     }
   }
 
@@ -178,6 +188,28 @@ class _ChannelScreenState extends State<ChannelScreen> {
       notifier.removeListener(onProgress);
       if (mounted) setState(() { _uploading = false; _uploadProgress = 0; _uploadPreview = null; });
     }
+  }
+
+  Future<void> _subscribe() async {
+    setState(() => _subscribing = true);
+    try {
+      await ApiService.post('/channels/${_channel.id}/subscribe', {});
+      if (mounted) setState(() {
+        _isSubscribed = true;
+        _channel = _channel.copyWith(subscribed: true, subscriberCount: _channel.subscriberCount + 1);
+      });
+    } catch (_) {} finally {
+      if (mounted) setState(() => _subscribing = false);
+    }
+  }
+
+  Future<void> _togglePostReaction(int postId, String emoji) async {
+    try {
+      final data = await ApiService.post('/channels/${_channel.id}/posts/$postId/react', {'emoji': emoji});
+      final reactions = (data['reactions'] as List).map((e) => ReactionModel.fromJson(e as Map<String, dynamic>)).toList();
+      final idx = _posts.indexWhere((p) => p.id == postId);
+      if (idx != -1 && mounted) setState(() => _posts[idx] = _posts[idx].copyWithReactions(reactions));
+    } catch (_) {}
   }
 
   Future<void> _scrollToPost(int postId) async {
@@ -339,6 +371,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
                   onDelete: () => _deletePost(post),
                   onReply: _isOwner ? () => setState(() => _replyTo = post) : null,
                   onTapReply: post.replyToId != null ? () => _scrollToPost(post.replyToId!) : null,
+                  onReact: (emoji) => _togglePostReaction(post.id, emoji),
                 );
               },
             ),
@@ -357,6 +390,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
             hasReply: _replyTo != null,
           ),
         ],
+        if (!_isOwner && !_isSubscribed)
+          _SubscribeBar(onSubscribe: _subscribe, loading: _subscribing),
       ]),
     );
   }
@@ -385,7 +420,8 @@ class _PostCard extends StatelessWidget {
   final bool isHighlighted;
   final VoidCallback onDelete;
   final VoidCallback? onTapReply;
-  const _PostCard({super.key, required this.post, required this.channel, required this.isOwner, this.isHighlighted = false, required this.onDelete, this.onTapReply});
+  final void Function(String)? onReact;
+  const _PostCard({super.key, required this.post, required this.channel, required this.isOwner, this.isHighlighted = false, required this.onDelete, this.onTapReply, this.onReact});
 
   @override
   Widget build(BuildContext context) {
@@ -450,6 +486,8 @@ class _PostCard extends StatelessWidget {
             )
           else
             const SizedBox(height: 12),
+          if (post.reactions.isNotEmpty)
+            PostReactionsRow(reactions: post.reactions, onTap: (e) => onReact?.call(e)),
         ]),
       ),
     );
@@ -627,7 +665,8 @@ class _SwipeablePost extends StatefulWidget {
   final VoidCallback onDelete;
   final VoidCallback? onReply;
   final VoidCallback? onTapReply;
-  const _SwipeablePost({super.key, required this.post, required this.channel, required this.isOwner, this.isHighlighted = false, required this.onDelete, this.onReply, this.onTapReply});
+  final void Function(String)? onReact;
+  const _SwipeablePost({super.key, required this.post, required this.channel, required this.isOwner, this.isHighlighted = false, required this.onDelete, this.onReply, this.onTapReply, this.onReact});
 
   @override
   State<_SwipeablePost> createState() => _SwipeablePostState();
@@ -670,11 +709,9 @@ class _SwipeablePostState extends State<_SwipeablePost> with SingleTickerProvide
 
   void _showMenu(BuildContext context) {
     final post = widget.post;
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppTheme.surface,
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-      builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    showReactionPickerWithMenu(
+      context,
+      menuItems: [
         if (post.text != null && post.text!.isNotEmpty) ListTile(
           leading: Icon(Icons.copy, color: AppTheme.orange),
           title: const Text('Копировать', style: TextStyle(color: AppTheme.textPrimary)),
@@ -690,8 +727,8 @@ class _SwipeablePostState extends State<_SwipeablePost> with SingleTickerProvide
           title: const Text('Удалить пост', style: TextStyle(color: Colors.redAccent)),
           onTap: () { Navigator.pop(context); widget.onDelete(); },
         ),
-      ])),
-    );
+      ],
+    ).then((emoji) { if (emoji != null) widget.onReact?.call(emoji); });
   }
 
   @override
@@ -723,8 +760,49 @@ class _SwipeablePostState extends State<_SwipeablePost> with SingleTickerProvide
             isHighlighted: widget.isHighlighted,
             onDelete: widget.onDelete,
             onTapReply: widget.onTapReply,
+            onReact: widget.onReact,
           ),
         ]),
+      ),
+    );
+  }
+}
+
+// ── Subscribe bar ──────────────────────────────────────────────────────────
+
+class _SubscribeBar extends StatelessWidget {
+  final VoidCallback onSubscribe;
+  final bool loading;
+  const _SubscribeBar({required this.onSubscribe, required this.loading});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return Container(
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+        boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.15), blurRadius: 12, offset: const Offset(0, -2))],
+      ),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: SafeArea(
+        top: false,
+        child: SizedBox(
+          width: double.infinity,
+          height: 50,
+          child: ElevatedButton(
+            onPressed: loading ? null : onSubscribe,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: AppTheme.bg,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              elevation: 0,
+            ),
+            child: loading
+                ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.bg, strokeWidth: 2))
+                : const Text('Подписаться', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
+        ),
       ),
     );
   }

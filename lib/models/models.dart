@@ -1,3 +1,19 @@
+class ReactionModel {
+  final String emoji;
+  final int count;
+  final bool reacted; // только для чатов
+  final List<Map<String, dynamic>> users; // только для чатов
+
+  const ReactionModel({required this.emoji, required this.count, this.reacted = false, this.users = const []});
+
+  factory ReactionModel.fromJson(Map<String, dynamic> j) => ReactionModel(
+    emoji: j['emoji'] as String,
+    count: int.tryParse(j['count']?.toString() ?? '1') ?? 1,
+    reacted: j['reacted'] as bool? ?? false,
+    users: (j['users'] as List?)?.cast<Map<String, dynamic>>() ?? [],
+  );
+}
+
 class UserModel {
   final int id;
   final String email;
@@ -65,9 +81,10 @@ class MessageModel {
   final String? replySenderName;
   final String? replyMediaType;
   final bool replyMediaDeleted;
-  final String? mediaType;   // 'image' | 'video' | null
-  final String? mediaUrl;    // presigned URL
+  final String? mediaType;
+  final String? mediaUrl;
   final bool mediaDeleted;
+  final List<ReactionModel> reactions;
 
   const MessageModel({
     required this.id,
@@ -85,6 +102,7 @@ class MessageModel {
     this.mediaType,
     this.mediaUrl,
     this.mediaDeleted = false,
+    this.reactions = const [],
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> j) => MessageModel(
@@ -103,7 +121,17 @@ class MessageModel {
         mediaType: j['media_type'] as String?,
         mediaUrl: j['media_url'] as String?,
         mediaDeleted: j['media_deleted'] as bool? ?? false,
+        reactions: (j['reactions'] as List?)?.map((e) => ReactionModel.fromJson(e as Map<String, dynamic>)).toList() ?? [],
       );
+
+  MessageModel copyWithReactions(List<ReactionModel> r) => MessageModel(
+    id: id, chatId: chatId, senderId: senderId, senderName: senderName,
+    senderAvatar: senderAvatar, text: text, createdAt: createdAt,
+    replyToId: replyToId, replyText: replyText, replySenderName: replySenderName,
+    replyMediaType: replyMediaType, replyMediaDeleted: replyMediaDeleted,
+    mediaType: mediaType, mediaUrl: mediaUrl, mediaDeleted: mediaDeleted,
+    reactions: r,
+  );
 }
 
 class ChannelModel {
@@ -144,10 +172,10 @@ class ChannelModel {
         lastPost: j['last_post'] as String?,
       );
 
-  ChannelModel copyWith({bool? subscribed, int? unreadCount, String? avatarUrl}) => ChannelModel(
+  ChannelModel copyWith({bool? subscribed, int? unreadCount, String? avatarUrl, int? subscriberCount}) => ChannelModel(
         id: id, ownerId: ownerId, name: name, username: username,
         description: description, avatarUrl: avatarUrl ?? this.avatarUrl,
-        subscriberCount: subscriberCount,
+        subscriberCount: subscriberCount ?? this.subscriberCount,
         subscribed: subscribed ?? this.subscribed,
         unreadCount: unreadCount ?? this.unreadCount,
         lastPost: lastPost,
@@ -168,6 +196,7 @@ class ChannelPostModel {
   final String? replyText;
   final String? replyMediaType;
   final bool replyMediaDeleted;
+  final List<ReactionModel> reactions;
 
   const ChannelPostModel({
     required this.id,
@@ -183,6 +212,7 @@ class ChannelPostModel {
     this.replyText,
     this.replyMediaType,
     this.replyMediaDeleted = false,
+    this.reactions = const [],
   });
 
   factory ChannelPostModel.fromJson(Map<String, dynamic> j) => ChannelPostModel(
@@ -199,5 +229,13 @@ class ChannelPostModel {
         replyText: j['reply_text'] as String?,
         replyMediaType: j['reply_media_type'] as String?,
         replyMediaDeleted: j['reply_media_deleted'] as bool? ?? false,
+        reactions: (j['reactions'] as List?)?.map((e) => ReactionModel.fromJson(e as Map<String, dynamic>)).toList() ?? [],
       );
+
+  ChannelPostModel copyWithReactions(List<ReactionModel> r) => ChannelPostModel(
+    id: id, channelId: channelId, text: text, mediaType: mediaType, mediaUrl: mediaUrl,
+    mediaDeleted: mediaDeleted, createdAt: createdAt, channelName: channelName,
+    channelAvatar: channelAvatar, replyToId: replyToId, replyText: replyText,
+    replyMediaType: replyMediaType, replyMediaDeleted: replyMediaDeleted, reactions: r,
+  );
 }
