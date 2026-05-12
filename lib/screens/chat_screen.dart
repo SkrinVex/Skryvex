@@ -7,6 +7,7 @@ import 'package:intl/intl.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/video_thumb.dart';
 import '../services/upload_service.dart';
 import '../theme.dart';
@@ -360,6 +361,17 @@ class _ChatScreenState extends State<ChatScreen> {
               onTap: () {
                 Navigator.pop(context);
                 setState(() => _replyTo = msg);
+              },
+            ),
+            if (msg.text != null && msg.text!.isNotEmpty) ListTile(
+              leading: Icon(Icons.copy, color: AppTheme.orange),
+              title: const Text('Копировать', style: TextStyle(color: AppTheme.textPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                Clipboard.setData(ClipboardData(text: msg.text!));
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Сообщение скопировано')),
+                );
               },
             ),
             if (hasMedia) ListTile(
@@ -785,12 +797,9 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
                                 ),
                               // Текст
                               if (widget.message.text != null && widget.message.text!.isNotEmpty)
-                                Text(
-                                  widget.message.text!,
-                                  style: TextStyle(
-                                    color: widget.isMe ? AppTheme.bg : AppTheme.textPrimary,
-                                    fontSize: 15,
-                                  ),
+                                _LinkText(
+                                  text: widget.message.text!,
+                                  textColor: widget.isMe ? AppTheme.bg : AppTheme.textPrimary,
                                 ),
                               const SizedBox(height: 3),
                               Text(
@@ -1241,6 +1250,88 @@ class _InputBar extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── Link-aware text ────────────────────────────────────────────────────────
+
+final _urlRegex = RegExp(
+  r'https?://[^\s<>"]+|www\.[^\s<>"]+|[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}|(?<![@\w])[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9\-]{0,61}[a-zA-Z0-9])?)+(?:/[^\s<>"]*)?',
+  caseSensitive: false,
+);
+
+class _LinkText extends StatelessWidget {
+  final String text;
+  final Color textColor;
+  const _LinkText({required this.text, required this.textColor});
+
+  @override
+  Widget build(BuildContext context) {
+    final spans = <InlineSpan>[];
+    int last = 0;
+    for (final m in _urlRegex.allMatches(text)) {
+      if (m.start > last) {
+        spans.add(TextSpan(text: text.substring(last, m.start)));
+      }
+      final url = m.group(0)!;
+      spans.add(WidgetSpan(
+        child: GestureDetector(
+          onTap: () => _showLinkDialog(context, url),
+          child: Text(
+            url,
+            style: TextStyle(
+              color: AppTheme.orange,
+              fontSize: 15,
+              decoration: TextDecoration.underline,
+              decorationColor: AppTheme.orange,
+            ),
+          ),
+        ),
+      ));
+      last = m.end;
+    }
+    if (last < text.length) spans.add(TextSpan(text: text.substring(last)));
+
+    return RichText(
+      text: TextSpan(
+        style: TextStyle(color: textColor, fontSize: 15),
+        children: spans,
+      ),
+    );
+  }
+
+  void _showLinkDialog(BuildContext context, String url) {
+    final isEmail = RegExp(r'^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$').hasMatch(url);
+    final fullUrl = isEmail ? 'mailto:$url' : (url.startsWith('http') ? url : 'https://$url');
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        content: Text(url, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 13)),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              Clipboard.setData(ClipboardData(text: url));
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(isEmail ? 'Email скопирован' : 'Ссылка скопирована')),
+              );
+            },
+            child: const Text('Копировать'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(ctx);
+              final uri = Uri.parse(fullUrl);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+            child: Text(isEmail ? 'Написать' : 'Открыть', style: TextStyle(color: AppTheme.orange)),
+          ),
+        ],
       ),
     );
   }
