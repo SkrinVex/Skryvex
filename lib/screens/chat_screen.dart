@@ -14,6 +14,7 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/cache_service.dart';
 import 'media_viewer.dart';
+import 'download_sheet.dart';
 
 class ChatScreen extends StatefulWidget {
   final int chatId;
@@ -341,6 +342,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   void _showMessageMenu(BuildContext context, MessageModel msg) {
     final isMe = msg.senderId == _myId;
+    final hasMedia = msg.mediaUrl != null && !msg.mediaDeleted;
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.surface,
@@ -357,6 +359,16 @@ class _ChatScreenState extends State<ChatScreen> {
               onTap: () {
                 Navigator.pop(context);
                 setState(() => _replyTo = msg);
+              },
+            ),
+            if (hasMedia) ListTile(
+              leading: const Icon(Icons.download, color: AppTheme.orange),
+              title: const Text('Сохранить', style: TextStyle(color: AppTheme.textPrimary)),
+              onTap: () {
+                Navigator.pop(context);
+                final ext = msg.mediaType == 'video' ? 'mp4' : 'jpg';
+                final filename = '${msg.mediaType}_${msg.id}.$ext';
+                showDownloadSheet(context, url: msg.mediaUrl!, filename: filename);
               },
             ),
             if (isMe) ListTile(
@@ -399,22 +411,48 @@ class _ChatScreenState extends State<ChatScreen> {
             ListTile(
               leading: const Icon(Icons.photo, color: AppTheme.orange),
               title: const Text('Фото из галереи', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () { Navigator.pop(context); _pickAndSendMedia(ImageSource.gallery); },
+              onTap: () { Navigator.pop(context); _pickWithTtlWarning(ImageSource.gallery); },
             ),
             ListTile(
               leading: const Icon(Icons.camera_alt, color: AppTheme.orange),
               title: const Text('Сделать фото', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () { Navigator.pop(context); _pickAndSendMedia(ImageSource.camera); },
+              onTap: () { Navigator.pop(context); _pickWithTtlWarning(ImageSource.camera); },
             ),
             ListTile(
               leading: const Icon(Icons.videocam, color: AppTheme.orange),
               title: const Text('Видео из галереи', style: TextStyle(color: AppTheme.textPrimary)),
-              onTap: () { Navigator.pop(context); _pickAndSendMedia(ImageSource.gallery, video: true); },
+              onTap: () { Navigator.pop(context); _pickWithTtlWarning(ImageSource.gallery, video: true); },
             ),
           ],
         ),
       ),
     );
+  }
+
+  Future<void> _pickWithTtlWarning(ImageSource source, {bool video = false}) async {
+    final shown = await CacheService.hasShownMediaTtlWarning();
+    if (!shown && mounted) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.surface,
+          title: const Text('Важно о медиафайлах', style: TextStyle(color: AppTheme.textPrimary)),
+          content: const Text(
+            'Фотографии и видео автоматически удаляются через 7 дней.\n\n'
+            'Чтобы сохранить файл, зажмите на сообщение и выберите «Сохранить».',
+            style: TextStyle(color: AppTheme.textSecondary),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Понятно', style: TextStyle(color: AppTheme.orange)),
+            ),
+          ],
+        ),
+      );
+      if (confirmed == true) await CacheService.setMediaTtlWarningShown();
+    }
+    if (mounted) _pickAndSendMedia(source, video: video);
   }
 
   @override

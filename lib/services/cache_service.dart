@@ -55,4 +55,15 @@ class CacheService {
     final prefs = await _prefs;
     await prefs.remove('cache_messages_$chatId');
   }
+
+  // Флаг показа предупреждения о TTL медиа
+  static Future<bool> hasShownMediaTtlWarning() async {
+    final prefs = await _prefs;
+    return prefs.getBool('shown_media_ttl_warning') ?? false;
+  }
+
+  static Future<void> setMediaTtlWarningShown() async {
+    final prefs = await _prefs;
+    await prefs.setBool('shown_media_ttl_warning', true);
+  }
 }

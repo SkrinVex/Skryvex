@@ -89,35 +89,36 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Stack(
-          children: [
-            MaterialVideoControlsTheme(
-              normal: MaterialVideoControlsThemeData(
-                padding: const EdgeInsets.only(bottom: 8),
-                seekBarThumbColor: AppTheme.orange,
-                seekBarPositionColor: AppTheme.orange,
-                bottomButtonBarMargin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
-              ),
-              fullscreen: MaterialVideoControlsThemeData(
-                seekBarThumbColor: AppTheme.orange,
-                seekBarPositionColor: AppTheme.orange,
-                bottomButtonBarMargin: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              ),
-              child: Video(
-                controller: _controller,
-                controls: MaterialVideoControls,
+      body: Stack(
+        children: [
+          MaterialVideoControlsTheme(
+            normal: MaterialVideoControlsThemeData(
+              seekBarThumbColor: AppTheme.orange,
+              seekBarPositionColor: AppTheme.orange,
+              bottomButtonBarMargin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            ),
+            fullscreen: MaterialVideoControlsThemeData(
+              seekBarThumbColor: AppTheme.orange,
+              seekBarPositionColor: AppTheme.orange,
+              bottomButtonBarMargin: EdgeInsets.fromLTRB(
+                16, 0, 16,
+                MediaQuery.of(context).padding.bottom + 24,
               ),
             ),
-            Positioned(
-              top: 8, left: 4,
-              child: IconButton(
-                icon: const Icon(Icons.close, color: Colors.white),
-                onPressed: () => Navigator.pop(context),
-              ),
+            child: Video(
+              controller: _controller,
+              controls: MaterialVideoControls,
             ),
-          ],
-        ),
+          ),
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 4,
+            left: 4,
+            child: IconButton(
+              icon: const Icon(Icons.close, color: Colors.white),
+              onPressed: () => Navigator.pop(context),
+            ),
+          ),
+        ],
       ),
     );
   }
