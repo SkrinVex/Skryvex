@@ -71,7 +71,7 @@ class _LoginScreenState extends State<LoginScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   const SizedBox(height: 40),
-                  const Text('Skryvex',
+                  Text('Skryvex',
                       style: TextStyle(
                         color: AppTheme.orange,
                         fontSize: 32,
@@ -137,7 +137,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ],
                   const SizedBox(height: 16),
                   _loading
-                      ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
+                      ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
                       : ElevatedButton(onPressed: _login, child: const Text('Войти')),
                   const SizedBox(height: 16),
                   Center(

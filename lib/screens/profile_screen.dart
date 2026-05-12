@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ui';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -112,6 +113,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final data = await ApiService.uploadFile('/auth/me/avatar', bytes, file.name);
       if (data['error'] != null) { _showError(data['error'] as String); return; }
       final u = UserModel.fromJson(data);
+      // Инвалидируем старый кеш аватара
+      await CachedNetworkImage.evictFromCache('avatar_me');
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user', jsonEncode(u.toJson()));
       if (mounted) setState(() => _user = u);
@@ -137,13 +140,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
             TextButton(
               onPressed: _saving ? null : _save,
               child: _saving
-                  ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2))
-                  : const Text('Сохранить', style: TextStyle(color: AppTheme.orange)),
+                  ? SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2))
+                  : Text('Сохранить', style: TextStyle(color: AppTheme.orange)),
             ),
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
+          ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
           : ListView(
               padding: const EdgeInsets.all(24),
               children: [
@@ -157,12 +160,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           radius: 48,
                           backgroundColor: AppTheme.surfaceVariant,
                           backgroundImage: _user?.avatarUrl != null
-                              ? NetworkImage(_user!.avatarUrl!)
+                              ? CachedNetworkImageProvider(_user!.avatarUrl!, cacheKey: 'avatar_me')
                               : null,
                           child: _user?.avatarUrl == null
                               ? Text(
                                   _user?.name.isNotEmpty == true ? _user!.name[0].toUpperCase() : '?',
-                                  style: const TextStyle(color: AppTheme.orange, fontSize: 32, fontWeight: FontWeight.w600),
+                                  style: TextStyle(color: AppTheme.orange, fontSize: 32, fontWeight: FontWeight.w600),
                                 )
                               : null,
                         ),
@@ -170,7 +173,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           bottom: 0, right: 0,
                           child: Container(
                             width: 28, height: 28,
-                            decoration: const BoxDecoration(color: AppTheme.orange, shape: BoxShape.circle),
+                            decoration: BoxDecoration(color: AppTheme.orange, shape: BoxShape.circle),
                             child: _uploadingAvatar
                                 ? const Padding(
                                     padding: EdgeInsets.all(6),
@@ -205,7 +208,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9_]')),
                   ],
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'username (необязательно)',
                     prefixText: '@',
                     prefixStyle: TextStyle(color: AppTheme.orange),

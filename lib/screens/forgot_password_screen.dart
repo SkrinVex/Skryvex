@@ -77,7 +77,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
           ],
           const SizedBox(height: 24),
           _loading
-              ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
+              ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
               : ElevatedButton(onPressed: _submit, child: const Text('Отправить ссылку')),
         ],
       ),
@@ -89,7 +89,7 @@ class _ForgotPasswordScreenState extends State<ForgotPasswordScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.mark_email_read_outlined, size: 64, color: AppTheme.orange),
+          Icon(Icons.mark_email_read_outlined, size: 64, color: AppTheme.orange),
           const SizedBox(height: 20),
           const Text('Письмо отправлено',
               style: TextStyle(color: AppTheme.textPrimary, fontSize: 20, fontWeight: FontWeight.w600)),

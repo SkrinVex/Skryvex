@@ -1,14 +1,17 @@
 import 'dart:convert';
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 import '../theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
+import '../services/app_settings.dart';
 import '../services/cache_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'chat_screen.dart';
 import 'search_screen.dart';
 import 'profile_screen.dart';
+import 'customization_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,9 +24,27 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
 
   @override
+  void initState() {
+    super.initState();
+    AppSettings.instance.addListener(_rebuild);
+  }
+
+  @override
+  void dispose() {
+    AppSettings.instance.removeListener(_rebuild);
+    super.dispose();
+  }
+
+  void _rebuild() => setState(() {});
+
+  @override
   Widget build(BuildContext context) {
+    final compact = AppSettings.instance.compactNav;
+    final accentColor = Theme.of(context).colorScheme.primary;
+    final themeKey = AppSettings.instance.themeColor.name;
     return Scaffold(
       body: IndexedStack(
+        key: ValueKey(themeKey),
         index: _tab,
         children: const [
           _ChatsTab(),
@@ -31,29 +52,39 @@ class _HomeScreenState extends State<HomeScreen> {
           _SettingsTab(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        backgroundColor: AppTheme.surface,
-        indicatorColor: AppTheme.orange.withValues(alpha: 0.15),
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble, color: AppTheme.orange),
-            label: 'Чаты',
+      extendBody: true,
+      bottomNavigationBar: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(24),
+          child: NavigationBar(
+            height: compact ? 56 : null,
+            backgroundColor: AppTheme.surface,
+            indicatorColor: accentColor.withValues(alpha: 0.15),
+            selectedIndex: _tab,
+            onDestinationSelected: (i) => setState(() => _tab = i),
+            labelBehavior: compact
+                ? NavigationDestinationLabelBehavior.alwaysHide
+                : NavigationDestinationLabelBehavior.alwaysShow,
+            destinations: const [
+              NavigationDestination(
+                icon: Icon(Icons.chat_bubble_outline),
+                selectedIcon: Icon(Icons.chat_bubble),
+                label: 'Чаты',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.explore_outlined),
+                selectedIcon: Icon(Icons.explore),
+                label: 'Сообщество',
+              ),
+              NavigationDestination(
+                icon: Icon(Icons.settings_outlined),
+                selectedIcon: Icon(Icons.settings),
+                label: 'Настройки',
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: Icon(Icons.explore_outlined),
-            selectedIcon: Icon(Icons.explore, color: AppTheme.orange),
-            label: 'Сообщество',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.settings_outlined),
-            selectedIcon: Icon(Icons.settings, color: AppTheme.orange),
-            label: 'Настройки',
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -161,7 +192,7 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
         ],
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
+          ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
           : _chats.isEmpty
               ? _empty()
               : RefreshIndicator(
@@ -169,6 +200,7 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
                   backgroundColor: AppTheme.surface,
                   onRefresh: () => _loadChats(forceRefresh: true),
                   child: ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 80),
                     itemCount: _chats.length,
                     separatorBuilder: (context, index) =>
                         const Divider(height: 1, indent: 72, color: AppTheme.divider),
@@ -220,7 +252,7 @@ class _ChatTile extends StatelessWidget {
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: _Avatar(name: chat.partnerName, url: chat.partnerAvatar),
+      leading: _Avatar(name: chat.partnerName, url: chat.partnerAvatar, cacheKey: 'avatar_${chat.partnerId}'),
       title: Text(chat.partnerName,
           style: TextStyle(
             color: AppTheme.textPrimary,
@@ -254,17 +286,20 @@ class _ChatTile extends StatelessWidget {
 class _Avatar extends StatelessWidget {
   final String name;
   final String? url;
-  const _Avatar({required this.name, this.url});
+  final String? cacheKey;
+  const _Avatar({required this.name, this.url, this.cacheKey});
 
   @override
   Widget build(BuildContext context) {
     return CircleAvatar(
       radius: 24,
       backgroundColor: AppTheme.surfaceVariant,
-      backgroundImage: url != null ? NetworkImage(url!) : null,
+      backgroundImage: url != null
+          ? CachedNetworkImageProvider(url!, cacheKey: cacheKey ?? url)
+          : null,
       child: url == null
           ? Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-              style: const TextStyle(color: AppTheme.orange, fontWeight: FontWeight.w600))
+              style: TextStyle(color: AppTheme.orange, fontWeight: FontWeight.w600))
           : null,
     );
   }
@@ -335,10 +370,17 @@ class _SettingsTab extends StatelessWidget {
         children: [
           const SizedBox(height: 8),
           ListTile(
-            leading: const Icon(Icons.person_outline, color: AppTheme.orange),
+            leading: Icon(Icons.person_outline, color: AppTheme.orange),
             title: const Text('Аккаунт', style: TextStyle(color: AppTheme.textPrimary)),
             trailing: const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
             onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileScreen())),
+          ),
+          const Divider(height: 1, indent: 16, color: AppTheme.divider),
+          ListTile(
+            leading: Icon(Icons.palette_outlined, color: AppTheme.orange),
+            title: const Text('Кастомизация', style: TextStyle(color: AppTheme.textPrimary)),
+            trailing: const Icon(Icons.chevron_right, color: AppTheme.textSecondary),
+            onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const CustomizationScreen())),
           ),
           const Divider(height: 1, indent: 16, color: AppTheme.divider),
           ListTile(

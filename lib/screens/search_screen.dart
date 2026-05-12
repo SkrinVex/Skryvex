@@ -63,7 +63,7 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
       ),
       body: _loading
-          ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
+          ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
           : ListView.separated(
               itemCount: _results.length,
               separatorBuilder: (context, index) => const Divider(height: 1, color: AppTheme.divider),
@@ -77,7 +77,7 @@ class _SearchScreenState extends State<SearchScreen> {
                     backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
                     child: avatarUrl == null
                         ? Text(name[0].toUpperCase(),
-                            style: const TextStyle(color: AppTheme.orange))
+                            style: TextStyle(color: AppTheme.orange))
                         : null,
                   ),
                   title: Text(name, style: const TextStyle(color: AppTheme.textPrimary)),

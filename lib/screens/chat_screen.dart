@@ -355,7 +355,7 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.reply, color: AppTheme.orange),
+              leading: Icon(Icons.reply, color: AppTheme.orange),
               title: const Text('Ответить', style: TextStyle(color: AppTheme.textPrimary)),
               onTap: () {
                 Navigator.pop(context);
@@ -363,7 +363,7 @@ class _ChatScreenState extends State<ChatScreen> {
               },
             ),
             if (hasMedia) ListTile(
-              leading: const Icon(Icons.download, color: AppTheme.orange),
+              leading: Icon(Icons.download, color: AppTheme.orange),
               title: const Text('Сохранить', style: TextStyle(color: AppTheme.textPrimary)),
               onTap: () {
                 Navigator.pop(context);
@@ -410,17 +410,17 @@ class _ChatScreenState extends State<ChatScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             ListTile(
-              leading: const Icon(Icons.photo, color: AppTheme.orange),
+              leading: Icon(Icons.photo, color: AppTheme.orange),
               title: const Text('Фото из галереи', style: TextStyle(color: AppTheme.textPrimary)),
               onTap: () { Navigator.pop(context); _pickWithTtlWarning(ImageSource.gallery); },
             ),
             ListTile(
-              leading: const Icon(Icons.camera_alt, color: AppTheme.orange),
+              leading: Icon(Icons.camera_alt, color: AppTheme.orange),
               title: const Text('Сделать фото', style: TextStyle(color: AppTheme.textPrimary)),
               onTap: () { Navigator.pop(context); _pickWithTtlWarning(ImageSource.camera); },
             ),
             ListTile(
-              leading: const Icon(Icons.videocam, color: AppTheme.orange),
+              leading: Icon(Icons.videocam, color: AppTheme.orange),
               title: const Text('Видео из галереи', style: TextStyle(color: AppTheme.textPrimary)),
               onTap: () { Navigator.pop(context); _pickWithTtlWarning(ImageSource.gallery, video: true); },
             ),
@@ -446,7 +446,7 @@ class _ChatScreenState extends State<ChatScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, true),
-              child: const Text('Понятно', style: TextStyle(color: AppTheme.orange)),
+              child: Text('Понятно', style: TextStyle(color: AppTheme.orange)),
             ),
           ],
         ),
@@ -476,10 +476,12 @@ class _ChatScreenState extends State<ChatScreen> {
             CircleAvatar(
               radius: 18,
               backgroundColor: AppTheme.surfaceVariant,
-              backgroundImage: widget.partnerAvatar != null ? NetworkImage(widget.partnerAvatar!) : null,
+              backgroundImage: widget.partnerAvatar != null
+                  ? CachedNetworkImageProvider(widget.partnerAvatar!, cacheKey: 'avatar_${widget.chatId}_partner')
+                  : null,
               child: widget.partnerAvatar == null
                   ? Text(widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : '?',
-                      style: const TextStyle(color: AppTheme.orange, fontSize: 14, fontWeight: FontWeight.w600))
+                      style: TextStyle(color: AppTheme.orange, fontSize: 14, fontWeight: FontWeight.w600))
                   : null,
             ),
             const SizedBox(width: 10),
@@ -502,7 +504,7 @@ class _ChatScreenState extends State<ChatScreen> {
             child: Stack(
               children: [
                 _loading
-                ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
+                ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
                 : _messages.isEmpty
                     ? Center(
                         child: Text('Начните переписку',
@@ -517,7 +519,7 @@ class _ChatScreenState extends State<ChatScreen> {
                           itemBuilder: (_, i) {
                             // Первый элемент — индикатор загрузки старых сообщений
                             if (_loadingMore && i == 0) {
-                              return const Padding(
+                              return Padding(
                                 padding: EdgeInsets.symmetric(vertical: 12),
                                 child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2))),
                               );
@@ -560,7 +562,7 @@ class _ChatScreenState extends State<ChatScreen> {
                   child: FloatingActionButton.small(
                     backgroundColor: AppTheme.surface,
                     onPressed: _scrollToBottom,
-                    child: const Icon(Icons.keyboard_arrow_down, color: AppTheme.orange),
+                    child: Icon(Icons.keyboard_arrow_down, color: AppTheme.orange),
                   ),
                 ),
               ],
@@ -978,7 +980,7 @@ class _VideoThumbnailState extends State<_VideoThumbnail> {
               else
                 Container(
                   color: Colors.black54,
-                  child: const Center(
+                  child: Center(
                     child: SizedBox(
                       width: 24, height: 24,
                       child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2),
@@ -1068,7 +1070,7 @@ class _MediaContent extends StatelessWidget {
             placeholder: (context, url) => Container(
               width: 220, height: 160,
               color: Colors.black26,
-              child: const Center(
+              child: Center(
                 child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2),
               ),
             ),
@@ -1140,7 +1142,7 @@ class _ReplyPreview extends StatelessWidget {
                 children: [
                   Text(
                     isMe ? 'Вы' : message.senderName,
-                    style: const TextStyle(
+                    style: TextStyle(
                         color: AppTheme.orange, fontSize: 12, fontWeight: FontWeight.w600),
                   ),
                   Text(

@@ -82,7 +82,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
               ],
               const SizedBox(height: 24),
               _loading
-                  ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
+                  ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
                   : ElevatedButton(onPressed: _verify, child: const Text('Подтвердить')),
             ],
           ),

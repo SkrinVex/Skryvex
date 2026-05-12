@@ -35,7 +35,7 @@ Future<void> showDownloadSheet(BuildContext context, {
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.folder_outlined, color: AppTheme.orange, size: 16),
+              Icon(Icons.folder_outlined, color: AppTheme.orange, size: 16),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
@@ -58,7 +58,7 @@ Future<void> showDownloadSheet(BuildContext context, {
         ),
         TextButton(
           onPressed: () => Navigator.pop(ctx, _PathChoice.defaults),
-          child: const Text('По умолчанию', style: TextStyle(color: AppTheme.orange)),
+          child: Text('По умолчанию', style: TextStyle(color: AppTheme.orange)),
         ),
       ],
     ),

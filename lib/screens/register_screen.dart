@@ -125,7 +125,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ],
                 const SizedBox(height: 24),
                 _loading
-                    ? const Center(child: CircularProgressIndicator(color: AppTheme.orange))
+                    ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
                     : ElevatedButton(onPressed: _register, child: const Text('Зарегистрироваться')),
               ],
             ),
