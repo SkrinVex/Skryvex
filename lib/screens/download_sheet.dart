@@ -1,6 +1,18 @@
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import '../services/download_service.dart';
 import '../theme.dart';
+
+String _defaultPathHint() {
+  if (kIsWeb) return 'Папка загрузок браузера';
+  if (Platform.isAndroid) return 'Внутренняя память / Download / Skryvex';
+  if (Platform.isIOS) return 'Документы приложения / Skryvex';
+  if (Platform.isLinux || Platform.isMacOS || Platform.isWindows) {
+    return 'Загрузки / Skryvex';
+  }
+  return 'Загрузки / Skryvex';
+}
 
 /// Показывает диалог выбора пути и запускает скачивание.
 /// Плашка прогресса появляется поверх контента и не закрывается свайпом/кнопкой назад.
@@ -14,9 +26,26 @@ Future<void> showDownloadSheet(BuildContext context, {
     builder: (ctx) => AlertDialog(
       backgroundColor: AppTheme.surface,
       title: const Text('Сохранить файл', style: TextStyle(color: AppTheme.textPrimary)),
-      content: const Text(
-        'Куда сохранить файл?',
-        style: TextStyle(color: AppTheme.textSecondary),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Куда сохранить файл?', style: TextStyle(color: AppTheme.textSecondary)),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.folder_outlined, color: AppTheme.orange, size: 16),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  'По умолчанию: ${_defaultPathHint()}',
+                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
       actions: [
         TextButton(

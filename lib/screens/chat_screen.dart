@@ -19,8 +19,9 @@ import 'download_sheet.dart';
 class ChatScreen extends StatefulWidget {
   final int chatId;
   final String partnerName;
+  final String? partnerAvatar;
 
-  const ChatScreen({super.key, required this.chatId, required this.partnerName});
+  const ChatScreen({super.key, required this.chatId, required this.partnerName, this.partnerAvatar});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -468,10 +469,31 @@ class _ChatScreenState extends State<ChatScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.partnerName),
+        scrolledUnderElevation: 0,
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            CircleAvatar(
+              radius: 18,
+              backgroundColor: AppTheme.surfaceVariant,
+              backgroundImage: widget.partnerAvatar != null ? NetworkImage(widget.partnerAvatar!) : null,
+              child: widget.partnerAvatar == null
+                  ? Text(widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : '?',
+                      style: const TextStyle(color: AppTheme.orange, fontSize: 14, fontWeight: FontWeight.w600))
+                  : null,
+            ),
+            const SizedBox(width: 10),
+            Text(widget.partnerName),
+          ],
+        ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
+          padding: const EdgeInsets.only(left: 8),
+        ),
+        backgroundColor: AppTheme.surface,
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(bottom: Radius.circular(16)),
         ),
       ),
       body: Column(
@@ -555,6 +577,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onSend: _send,
             onAttach: _showMediaPicker,
             hasText: _hasText,
+            hasReply: _replyTo != null,
           ),
         ],
       ),
@@ -1147,18 +1170,27 @@ class _InputBar extends StatelessWidget {
   final VoidCallback onSend;
   final VoidCallback onAttach;
   final bool hasText;
+  final bool hasReply;
 
   const _InputBar({
     required this.controller,
     required this.onSend,
     required this.onAttach,
     required this.hasText,
+    required this.hasReply,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: AppTheme.surface,
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeOut,
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        borderRadius: hasReply
+            ? BorderRadius.zero
+            : const BorderRadius.vertical(top: Radius.circular(16)),
+      ),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       child: SafeArea(
         top: false,

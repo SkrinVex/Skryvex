@@ -180,6 +180,7 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
                             builder: (_) => ChatScreen(
                               chatId: _chats[i].id,
                               partnerName: _chats[i].partnerName,
+                              partnerAvatar: _chats[i].partnerAvatar,
                             ),
                           ),
                         );
