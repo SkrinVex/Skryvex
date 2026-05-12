@@ -46,6 +46,7 @@ class UploadService {
     required bool isVideo,
     required Uint8List? previewBytes,
     int? replyToId,
+    String? caption,
     String? customPath,
   }) async {
     final prefs = await SharedPreferences.getInstance();
@@ -68,6 +69,7 @@ class UploadService {
       final formData = FormData.fromMap({
         'file': MultipartFile.fromBytes(bytes, filename: filename),
         if (replyToId != null) 'reply_to_id': '$replyToId',
+        if (caption != null && caption.isNotEmpty) 'text': caption,
       });
 
       await dio.post(

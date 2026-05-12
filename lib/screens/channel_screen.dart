@@ -15,6 +15,7 @@ import '../theme.dart';
 import 'media_viewer.dart';
 import 'download_sheet.dart';
 
+import 'media_caption_sheet.dart';
 import 'create_channel_screen.dart';
 
 class ChannelScreen extends StatefulWidget {
@@ -142,6 +143,17 @@ class _ChannelScreenState extends State<ChannelScreen> {
         : await ImagePicker().pickImage(source: ImageSource.gallery, imageQuality: 85);
     if (file == null) return;
     final bytes = await file.readAsBytes();
+
+    if (!mounted) return;
+    final result = await showMediaCaptionSheet(
+      context,
+      isVideo: video,
+      preview: video
+          ? Container(height: 200, color: Colors.black, child: const Center(child: Icon(Icons.videocam, color: AppTheme.textSecondary, size: 48)))
+          : Image.memory(bytes, fit: BoxFit.contain),
+    );
+    if (result == null) return;
+
     setState(() { _uploading = true; _uploadProgress = 0; if (!video) _uploadPreview = bytes; });
 
     final notifier = UploadService.instance.notifierFor(-_channel.id);
@@ -154,9 +166,10 @@ class _ChannelScreenState extends State<ChannelScreen> {
     notifier.addListener(onProgress);
     try {
       await UploadService.instance.upload(
-        chatId: -_channel.id, // отрицательный id чтобы не конфликтовать с чатами
+        chatId: -_channel.id,
         bytes: bytes, filename: file.name, isVideo: video,
         previewBytes: video ? null : bytes,
+        caption: result.caption.isNotEmpty ? result.caption : null,
         customPath: '/channels/${_channel.id}/posts/media',
       );
     } catch (_) {

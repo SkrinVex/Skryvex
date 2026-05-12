@@ -16,6 +16,7 @@ import '../services/api_service.dart';
 import '../services/cache_service.dart';
 import 'media_viewer.dart';
 import 'download_sheet.dart';
+import 'media_caption_sheet.dart';
 
 class ChatScreen extends StatefulWidget {
   final int chatId;
@@ -233,6 +234,18 @@ class _ChatScreenState extends State<ChatScreen> {
     if (file == null) return;
 
     final bytes = await file.readAsBytes();
+
+    // Показываем диалог подписи
+    if (!mounted) return;
+    final result = await showMediaCaptionSheet(
+      context,
+      isVideo: video,
+      preview: video
+          ? Container(height: 200, color: Colors.black, child: const Center(child: Icon(Icons.videocam, color: AppTheme.textSecondary, size: 48)))
+          : Image.memory(bytes, fit: BoxFit.contain),
+    );
+    if (result == null) return; // отмена
+
     final replyToId = _replyTo?.id;
     setState(() { _replyTo = null; _uploading = true; _uploadProgress = 0; });
 
@@ -269,6 +282,7 @@ class _ChatScreenState extends State<ChatScreen> {
         isVideo: video,
         previewBytes: preview,
         replyToId: replyToId,
+        caption: result.caption.isNotEmpty ? result.caption : null,
       );
     } catch (_) {
       if (mounted) {
