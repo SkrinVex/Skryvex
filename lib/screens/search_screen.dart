@@ -57,7 +57,9 @@ class _SearchScreenState extends State<SearchScreen> {
           decoration: const InputDecoration(
             hintText: 'Поиск пользователей...',
             border: InputBorder.none,
-            fillColor: Colors.transparent,
+            focusedBorder: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            filled: false,
           ),
           onChanged: _search,
         ),

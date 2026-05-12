@@ -46,6 +46,7 @@ class UploadService {
     required bool isVideo,
     required Uint8List? previewBytes,
     int? replyToId,
+    String? customPath,
   }) async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
@@ -61,6 +62,7 @@ class UploadService {
       cancelToken: cancelToken,
     );
 
+    final path = customPath ?? '/chats/$chatId/media';
     final dio = Dio();
     try {
       final formData = FormData.fromMap({
@@ -69,7 +71,7 @@ class UploadService {
       });
 
       await dio.post(
-        '${ApiService.baseUrl}/chats/$chatId/media',
+        '${ApiService.baseUrl}$path',
         data: formData,
         options: Options(headers: {'Authorization': 'Bearer $token'}),
         cancelToken: cancelToken,

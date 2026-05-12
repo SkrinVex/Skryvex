@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -12,6 +13,8 @@ import 'chat_screen.dart';
 import 'search_screen.dart';
 import 'profile_screen.dart';
 import 'customization_screen.dart';
+import 'channel_screen.dart';
+import 'create_channel_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -22,6 +25,11 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
+  int _chatUnread = 0;
+
+  void updateChatUnread(int count) {
+    if (mounted && count != _chatUnread) setState(() => _chatUnread = count);
+  }
 
   @override
   void initState() {
@@ -46,10 +54,10 @@ class _HomeScreenState extends State<HomeScreen> {
       body: IndexedStack(
         key: ValueKey(themeKey),
         index: _tab,
-        children: const [
-          _ChatsTab(),
-          _CommunityTab(),
-          _SettingsTab(),
+        children: [
+          _ChatsTab(onUnreadChanged: updateChatUnread),
+          const _CommunityTab(),
+          const _SettingsTab(),
         ],
       ),
       extendBody: true,
@@ -66,18 +74,26 @@ class _HomeScreenState extends State<HomeScreen> {
             labelBehavior: compact
                 ? NavigationDestinationLabelBehavior.alwaysHide
                 : NavigationDestinationLabelBehavior.alwaysShow,
-            destinations: const [
+            destinations: [
               NavigationDestination(
-                icon: Icon(Icons.chat_bubble_outline),
-                selectedIcon: Icon(Icons.chat_bubble),
+                icon: Badge(
+                  isLabelVisible: _chatUnread > 0,
+                  label: Text('$_chatUnread'),
+                  child: const Icon(Icons.chat_bubble_outline),
+                ),
+                selectedIcon: Badge(
+                  isLabelVisible: _chatUnread > 0,
+                  label: Text('$_chatUnread'),
+                  child: const Icon(Icons.chat_bubble),
+                ),
                 label: 'Чаты',
               ),
-              NavigationDestination(
+              const NavigationDestination(
                 icon: Icon(Icons.explore_outlined),
                 selectedIcon: Icon(Icons.explore),
                 label: 'Сообщество',
               ),
-              NavigationDestination(
+              const NavigationDestination(
                 icon: Icon(Icons.settings_outlined),
                 selectedIcon: Icon(Icons.settings),
                 label: 'Настройки',
@@ -93,7 +109,8 @@ class _HomeScreenState extends State<HomeScreen> {
 // ── Chats tab ──────────────────────────────────────────────────────────────
 
 class _ChatsTab extends StatefulWidget {
-  const _ChatsTab();
+  final void Function(int)? onUnreadChanged;
+  const _ChatsTab({this.onUnreadChanged});
 
   @override
   State<_ChatsTab> createState() => _ChatsTabState();
@@ -165,10 +182,10 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
       final data = await ApiService.get('/chats') as List<dynamic>;
       await CacheService.saveChats(data);
       if (mounted) {
-        setState(() {
-          _chats = data.map((e) => ChatModel.fromJson(e as Map<String, dynamic>)).toList();
-          _loading = false;
-        });
+        final chats = data.map((e) => ChatModel.fromJson(e as Map<String, dynamic>)).toList();
+        setState(() { _chats = chats; _loading = false; });
+        final unread = chats.fold(0, (s, c) => s + c.unreadCount);
+        widget.onUnreadChanged?.call(unread);
       }
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -307,25 +324,288 @@ class _Avatar extends StatelessWidget {
 
 // ── Community tab ──────────────────────────────────────────────────────────
 
-class _CommunityTab extends StatelessWidget {
+class _CommunityTab extends StatefulWidget {
   const _CommunityTab();
 
   @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: const Text('Сообщество')),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.explore_outlined,
-                size: 56, color: AppTheme.textSecondary.withValues(alpha: 0.4)),
-            const SizedBox(height: 16),
-            const Text('В разработке',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
+  State<_CommunityTab> createState() => _CommunityTabState();
+}
+
+class _CommunityTabState extends State<_CommunityTab> with SingleTickerProviderStateMixin, AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  late final TabController _tabCtrl;
+  List<ChannelModel> _subscribed = [];
+  List<ChannelModel> _discover = [];
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl.addListener(() { if (!_tabCtrl.indexIsChanging) setState(() {}); });
+    _load();
+  }
+
+  @override
+  void dispose() { _tabCtrl.dispose(); super.dispose(); }
+
+  Future<void> _load() async {
+    try {
+      final results = await Future.wait([
+        ApiService.get('/channels/subscribed'),
+        ApiService.get('/channels'),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _subscribed = (results[0] as List).map((e) => ChannelModel.fromJson(e as Map<String, dynamic>)).toList();
+        _discover = (results[1] as List).map((e) => ChannelModel.fromJson(e as Map<String, dynamic>)).toList();
+        _loading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _toggleSubscribe(ChannelModel ch) async {
+    if (ch.subscribed) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          backgroundColor: AppTheme.surface,
+          title: const Text('Отписаться?', style: TextStyle(color: AppTheme.textPrimary)),
+          content: Text('Вы больше не будете получать посты от @${ch.username}', style: const TextStyle(color: AppTheme.textSecondary)),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+            TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Отписаться', style: TextStyle(color: Colors.redAccent))),
           ],
         ),
+      );
+      if (ok != true) return;
+      await ApiService.delete('/channels/${ch.id}/subscribe');
+    } else {
+      await ApiService.post('/channels/${ch.id}/subscribe', {});
+    }
+    _load();
+  }
+
+  Future<void> _openChannel(ChannelModel ch) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => ChannelScreen(channel: ch)));
+    _load();
+  }
+
+  int get _totalUnread => _subscribed.fold(0, (s, c) => s + c.unreadCount);
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
+    final accent = Theme.of(context).colorScheme.primary;
+    final isCatalog = _tabCtrl.index == 1;
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Сообщество'),
+        actions: [
+          if (isCatalog)
+            IconButton(icon: Icon(Icons.search, color: accent), onPressed: () async {
+              await Navigator.push(context, MaterialPageRoute(builder: (_) => _ChannelSearchScreen(onOpen: _openChannel, onSubscribe: _toggleSubscribe)));
+              _load();
+            })
+          else
+            IconButton(
+              icon: Icon(Icons.add, color: accent),
+              onPressed: () async {
+                final ch = await Navigator.push<ChannelModel>(context, MaterialPageRoute(builder: (_) => const CreateChannelScreen()));
+                if (ch != null) _load();
+              },
+            ),
+        ],
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(48),
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            height: 40,
+            decoration: BoxDecoration(color: AppTheme.surfaceVariant, borderRadius: BorderRadius.circular(12)),
+            child: TabBar(
+              controller: _tabCtrl,
+              dividerColor: Colors.transparent,
+              indicator: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(10)),
+              indicatorSize: TabBarIndicatorSize.tab,
+              labelColor: AppTheme.bg,
+              unselectedLabelColor: AppTheme.textSecondary,
+              labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+              unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.normal),
+              tabs: [
+                Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  const Text('Мои каналы'),
+                  if (_totalUnread > 0) ...[
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(color: AppTheme.bg.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(10)),
+                      child: Text('$_totalUnread', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ])),
+                const Tab(text: 'Каталог'),
+              ],
+            ),
+          ),
+        ),
+        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(bottom: Radius.circular(16))),
       ),
+      body: _loading
+          ? Center(child: CircularProgressIndicator(color: accent))
+          : TabBarView(controller: _tabCtrl, children: [
+              RefreshIndicator(
+                color: accent, backgroundColor: AppTheme.surface,
+                onRefresh: _load,
+                child: _subscribed.isEmpty
+                    ? _empty('Вы не подписаны ни на один канал', 'Найдите каналы во вкладке «Каталог»')
+                    : ListView.separated(
+                        padding: const EdgeInsets.only(bottom: 80),
+                        itemCount: _subscribed.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 72, color: AppTheme.divider),
+                        itemBuilder: (_, i) => _ChannelTile(channel: _subscribed[i], onTap: () => _openChannel(_subscribed[i]), onSubscribe: () => _toggleSubscribe(_subscribed[i])),
+                      ),
+              ),
+              RefreshIndicator(
+                color: accent, backgroundColor: AppTheme.surface,
+                onRefresh: _load,
+                child: _discover.isEmpty
+                    ? _empty('Каналов пока нет', 'Создайте первый канал!')
+                    : ListView.separated(
+                        padding: const EdgeInsets.only(bottom: 80),
+                        itemCount: _discover.length,
+                        separatorBuilder: (_, __) => const Divider(height: 1, indent: 72, color: AppTheme.divider),
+                        itemBuilder: (_, i) => _ChannelTile(channel: _discover[i], onTap: () => _openChannel(_discover[i]), onSubscribe: () => _toggleSubscribe(_discover[i])),
+                      ),
+              ),
+            ]),
+    );
+  }
+
+  Widget _empty(String title, String sub) => Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+    Icon(Icons.explore_outlined, size: 56, color: AppTheme.textSecondary.withValues(alpha: 0.4)),
+    const SizedBox(height: 16),
+    Text(title, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
+    const SizedBox(height: 8),
+    Text(sub, style: TextStyle(color: AppTheme.textSecondary.withValues(alpha: 0.6), fontSize: 13)),
+  ]));
+}
+
+class _ChannelTile extends StatelessWidget {
+  final ChannelModel channel;
+  final VoidCallback onTap;
+  final VoidCallback onSubscribe;
+  const _ChannelTile({required this.channel, required this.onTap, required this.onSubscribe});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: CircleAvatar(
+        radius: 24, backgroundColor: AppTheme.surfaceVariant,
+        backgroundImage: channel.avatarUrl != null
+            ? CachedNetworkImageProvider(channel.avatarUrl!, cacheKey: 'ch_avatar_${channel.id}')
+            : null,
+        child: channel.avatarUrl == null
+            ? Text(channel.name[0].toUpperCase(), style: TextStyle(color: accent, fontWeight: FontWeight.w600))
+            : null,
+      ),
+      title: Text(channel.name, style: TextStyle(color: AppTheme.textPrimary, fontWeight: channel.unreadCount > 0 ? FontWeight.w600 : FontWeight.normal)),
+      subtitle: Text('@${channel.username} · ${channel.subscriberCount} подписчиков',
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (channel.unreadCount > 0)
+          Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(10)),
+            child: Text('${channel.unreadCount}', style: TextStyle(color: AppTheme.bg, fontSize: 12, fontWeight: FontWeight.w600))),
+        GestureDetector(
+          onTap: onSubscribe,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: channel.subscribed ? AppTheme.surfaceVariant : accent,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(channel.subscribed ? 'Подписан' : 'Подписаться',
+                style: TextStyle(color: channel.subscribed ? AppTheme.textSecondary : AppTheme.bg, fontSize: 12, fontWeight: FontWeight.w600)),
+          ),
+        ),
+      ]),
+    );
+  }
+}
+
+// ── Channel search screen ──────────────────────────────────────────────────
+
+class _ChannelSearchScreen extends StatefulWidget {
+  final Future<void> Function(ChannelModel) onOpen;
+  final Future<void> Function(ChannelModel) onSubscribe;
+  const _ChannelSearchScreen({required this.onOpen, required this.onSubscribe});
+
+  @override
+  State<_ChannelSearchScreen> createState() => _ChannelSearchScreenState();
+}
+
+class _ChannelSearchScreenState extends State<_ChannelSearchScreen> {
+  final _ctrl = TextEditingController();
+  List<ChannelModel> _results = [];
+  bool _loading = false;
+  Timer? _debounce;
+
+  @override
+  void dispose() { _debounce?.cancel(); _ctrl.dispose(); super.dispose(); }
+
+  void _search(String q) {
+    _debounce?.cancel();
+    if (q.trim().length < 2) { setState(() => _results = []); return; }
+    _debounce = Timer(const Duration(milliseconds: 400), () async {
+      setState(() => _loading = true);
+      try {
+        final data = await ApiService.get('/channels/search?q=${Uri.encodeComponent(q)}') as List;
+        if (mounted) setState(() { _results = data.map((e) => ChannelModel.fromJson(e as Map<String, dynamic>)).toList(); _loading = false; });
+      } catch (_) { if (mounted) setState(() => _loading = false); }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return Scaffold(
+      appBar: AppBar(
+        title: TextField(
+          controller: _ctrl,
+          autofocus: true,
+          style: const TextStyle(color: AppTheme.textPrimary),
+          decoration: const InputDecoration(
+            hintText: 'Поиск каналов...',
+            border: InputBorder.none,
+            focusedBorder: InputBorder.none,
+            enabledBorder: InputBorder.none,
+            filled: false,
+          ),
+          onChanged: _search,
+        ),
+      ),
+      body: _loading
+          ? Center(child: CircularProgressIndicator(color: accent))
+          : ListView.separated(
+              itemCount: _results.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, indent: 72, color: AppTheme.divider),
+              itemBuilder: (_, i) => _ChannelTile(
+                channel: _results[i],
+                onTap: () => widget.onOpen(_results[i]),
+                onSubscribe: () async {
+                  await widget.onSubscribe(_results[i]);
+                  _search(_ctrl.text);
+                },
+              ),
+            ),
     );
   }
 }

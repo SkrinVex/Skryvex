@@ -105,3 +105,99 @@ class MessageModel {
         mediaDeleted: j['media_deleted'] as bool? ?? false,
       );
 }
+
+class ChannelModel {
+  final int id;
+  final int ownerId;
+  final String name;
+  final String username;
+  final String? description;
+  final String? avatarUrl;
+  final int subscriberCount;
+  final bool subscribed;
+  final int unreadCount;
+  final String? lastPost;
+
+  const ChannelModel({
+    required this.id,
+    required this.ownerId,
+    required this.name,
+    required this.username,
+    this.description,
+    this.avatarUrl,
+    required this.subscriberCount,
+    required this.subscribed,
+    required this.unreadCount,
+    this.lastPost,
+  });
+
+  factory ChannelModel.fromJson(Map<String, dynamic> j) => ChannelModel(
+        id: j['id'] as int,
+        ownerId: j['owner_id'] as int,
+        name: j['name'] as String,
+        username: j['username'] as String,
+        description: j['description'] as String?,
+        avatarUrl: j['avatar_url'] as String?,
+        subscriberCount: int.tryParse(j['subscriber_count']?.toString() ?? '0') ?? 0,
+        subscribed: j['subscribed'] as bool? ?? false,
+        unreadCount: int.tryParse(j['unread_count']?.toString() ?? '0') ?? 0,
+        lastPost: j['last_post'] as String?,
+      );
+
+  ChannelModel copyWith({bool? subscribed, int? unreadCount, String? avatarUrl}) => ChannelModel(
+        id: id, ownerId: ownerId, name: name, username: username,
+        description: description, avatarUrl: avatarUrl ?? this.avatarUrl,
+        subscriberCount: subscriberCount,
+        subscribed: subscribed ?? this.subscribed,
+        unreadCount: unreadCount ?? this.unreadCount,
+        lastPost: lastPost,
+      );
+}
+
+class ChannelPostModel {
+  final int id;
+  final int channelId;
+  final String? text;
+  final String? mediaType;
+  final String? mediaUrl;
+  final bool mediaDeleted;
+  final DateTime createdAt;
+  final String? channelName;
+  final String? channelAvatar;
+  final int? replyToId;
+  final String? replyText;
+  final String? replyMediaType;
+  final bool replyMediaDeleted;
+
+  const ChannelPostModel({
+    required this.id,
+    required this.channelId,
+    this.text,
+    this.mediaType,
+    this.mediaUrl,
+    required this.mediaDeleted,
+    required this.createdAt,
+    this.channelName,
+    this.channelAvatar,
+    this.replyToId,
+    this.replyText,
+    this.replyMediaType,
+    this.replyMediaDeleted = false,
+  });
+
+  factory ChannelPostModel.fromJson(Map<String, dynamic> j) => ChannelPostModel(
+        id: j['id'] as int,
+        channelId: j['channel_id'] as int,
+        text: j['text'] as String?,
+        mediaType: j['media_type'] as String?,
+        mediaUrl: j['media_url'] as String?,
+        mediaDeleted: j['media_deleted'] as bool? ?? false,
+        createdAt: DateTime.parse(j['created_at'] as String),
+        channelName: j['channel_name'] as String?,
+        channelAvatar: j['channel_avatar'] as String?,
+        replyToId: j['reply_to_id'] as int?,
+        replyText: j['reply_text'] as String?,
+        replyMediaType: j['reply_media_type'] as String?,
+        replyMediaDeleted: j['reply_media_deleted'] as bool? ?? false,
+      );
+}
