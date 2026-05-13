@@ -45,6 +45,7 @@ class ChatModel {
   final DateTime? lastMessageAt;
   final int unreadCount;
   final bool isSelf;
+  final bool isSystem;
 
   const ChatModel({
     required this.id,
@@ -55,6 +56,7 @@ class ChatModel {
     this.lastMessageAt,
     this.unreadCount = 0,
     this.isSelf = false,
+    this.isSystem = false,
   });
 
   factory ChatModel.fromJson(Map<String, dynamic> j) => ChatModel(
@@ -68,14 +70,15 @@ class ChatModel {
             : null,
         unreadCount: int.tryParse(j['unread_count']?.toString() ?? '0') ?? 0,
         isSelf: j['is_self'] as bool? ?? false,
+        isSystem: j['is_system'] as bool? ?? false,
       );
 }
 
 class MessageModel {
   final int id;
   final int chatId;
-  final int senderId;
-  final String senderName;
+  final int? senderId;
+  final String? senderName;
   final String? senderAvatar;
   final String? text;
   final DateTime createdAt;
@@ -88,12 +91,13 @@ class MessageModel {
   final String? mediaUrl;
   final bool mediaDeleted;
   final List<ReactionModel> reactions;
+  final Map<String, dynamic>? actionData;
 
   const MessageModel({
     required this.id,
     required this.chatId,
     required this.senderId,
-    required this.senderName,
+    this.senderName,
     this.senderAvatar,
     this.text,
     required this.createdAt,
@@ -106,13 +110,14 @@ class MessageModel {
     this.mediaUrl,
     this.mediaDeleted = false,
     this.reactions = const [],
+    this.actionData,
   });
 
   factory MessageModel.fromJson(Map<String, dynamic> j) => MessageModel(
         id: j['id'] as int,
         chatId: j['chat_id'] as int,
-        senderId: j['sender_id'] as int,
-        senderName: j['sender_name'] as String,
+        senderId: j['sender_id'] as int?,
+        senderName: j['sender_name'] as String?,
         senderAvatar: j['sender_avatar'] as String?,
         text: j['text'] as String?,
         createdAt: DateTime.parse(j['created_at'] as String),
@@ -125,6 +130,7 @@ class MessageModel {
         mediaUrl: j['media_url'] as String?,
         mediaDeleted: j['media_deleted'] as bool? ?? false,
         reactions: (j['reactions'] as List?)?.map((e) => ReactionModel.fromJson(e as Map<String, dynamic>)).toList() ?? [],
+        actionData: j['action_data'] as Map<String, dynamic>?,
       );
 
   MessageModel copyWithReactions(List<ReactionModel> r) => MessageModel(
@@ -133,7 +139,17 @@ class MessageModel {
     replyToId: replyToId, replyText: replyText, replySenderName: replySenderName,
     replyMediaType: replyMediaType, replyMediaDeleted: replyMediaDeleted,
     mediaType: mediaType, mediaUrl: mediaUrl, mediaDeleted: mediaDeleted,
-    reactions: r,
+    reactions: r, actionData: actionData,
+  );
+
+  MessageModel copyWithActionResolved() => MessageModel(
+    id: id, chatId: chatId, senderId: senderId, senderName: senderName,
+    senderAvatar: senderAvatar, text: text, createdAt: createdAt,
+    replyToId: replyToId, replyText: replyText, replySenderName: replySenderName,
+    replyMediaType: replyMediaType, replyMediaDeleted: replyMediaDeleted,
+    mediaType: mediaType, mediaUrl: mediaUrl, mediaDeleted: mediaDeleted,
+    reactions: reactions,
+    actionData: actionData != null ? {...actionData!, 'resolved': true} : null,
   );
 }
 
@@ -148,6 +164,7 @@ class ChannelModel {
   final bool subscribed;
   final int unreadCount;
   final String? lastPost;
+  final bool isOwner;
 
   const ChannelModel({
     required this.id,
@@ -160,6 +177,7 @@ class ChannelModel {
     required this.subscribed,
     required this.unreadCount,
     this.lastPost,
+    this.isOwner = false,
   });
 
   factory ChannelModel.fromJson(Map<String, dynamic> j) => ChannelModel(
@@ -173,6 +191,7 @@ class ChannelModel {
         subscribed: j['subscribed'] as bool? ?? false,
         unreadCount: int.tryParse(j['unread_count']?.toString() ?? '0') ?? 0,
         lastPost: j['last_post'] as String?,
+        isOwner: j['is_owner'] as bool? ?? false,
       );
 
   ChannelModel copyWith({bool? subscribed, int? unreadCount, String? avatarUrl, int? subscriberCount}) => ChannelModel(
@@ -181,7 +200,7 @@ class ChannelModel {
         subscriberCount: subscriberCount ?? this.subscriberCount,
         subscribed: subscribed ?? this.subscribed,
         unreadCount: unreadCount ?? this.unreadCount,
-        lastPost: lastPost,
+        lastPost: lastPost, isOwner: isOwner,
       );
 }
 
@@ -240,5 +259,112 @@ class ChannelPostModel {
     mediaDeleted: mediaDeleted, createdAt: createdAt, channelName: channelName,
     channelAvatar: channelAvatar, replyToId: replyToId, replyText: replyText,
     replyMediaType: replyMediaType, replyMediaDeleted: replyMediaDeleted, reactions: r,
+  );
+}
+
+class GroupModel {
+  final int id;
+  final String name;
+  final String? avatarUrl;
+  final String? role; // 'owner' | 'member' | null (not joined)
+  final bool isPrivate;
+  final String? inviteCode;
+  final int memberCount;
+  final int unreadCount;
+  final String? lastMessage;
+  final DateTime? lastMessageAt;
+
+  const GroupModel({
+    required this.id,
+    required this.name,
+    this.avatarUrl,
+    this.role,
+    this.isPrivate = false,
+    this.inviteCode,
+    required this.memberCount,
+    required this.unreadCount,
+    this.lastMessage,
+    this.lastMessageAt,
+  });
+
+  factory GroupModel.fromJson(Map<String, dynamic> j) => GroupModel(
+    id: j['id'] as int,
+    name: j['name'] as String,
+    avatarUrl: j['avatar_url'] as String?,
+    role: j['role'] as String?,
+    isPrivate: j['is_private'] as bool? ?? false,
+    inviteCode: j['invite_code'] as String?,
+    memberCount: int.tryParse(j['member_count']?.toString() ?? '0') ?? 0,
+    unreadCount: int.tryParse(j['unread_count']?.toString() ?? '0') ?? 0,
+    lastMessage: j['last_message'] as String?,
+    lastMessageAt: j['last_message_at'] != null ? DateTime.parse(j['last_message_at'] as String) : null,
+  );
+}
+
+class GroupMessageModel {
+  final int id;
+  final int groupId;
+  final int? senderId;
+  final String? senderName;
+  final String? senderAvatar;
+  final String? text;
+  final bool isSystem;
+  final DateTime createdAt;
+  final int? replyToId;
+  final String? replyText;
+  final String? replySenderName;
+  final String? replyMediaType;
+  final bool replyMediaDeleted;
+  final String? mediaType;
+  final String? mediaUrl;
+  final bool mediaDeleted;
+  final List<ReactionModel> reactions;
+
+  const GroupMessageModel({
+    required this.id,
+    required this.groupId,
+    this.senderId,
+    this.senderName,
+    this.senderAvatar,
+    this.text,
+    this.isSystem = false,
+    required this.createdAt,
+    this.replyToId,
+    this.replyText,
+    this.replySenderName,
+    this.replyMediaType,
+    this.replyMediaDeleted = false,
+    this.mediaType,
+    this.mediaUrl,
+    this.mediaDeleted = false,
+    this.reactions = const [],
+  });
+
+  factory GroupMessageModel.fromJson(Map<String, dynamic> j) => GroupMessageModel(
+    id: j['id'] as int,
+    groupId: j['group_id'] as int,
+    senderId: j['sender_id'] as int?,
+    senderName: j['sender_name'] as String?,
+    senderAvatar: j['sender_avatar'] as String?,
+    text: j['text'] as String?,
+    isSystem: j['is_system'] as bool? ?? false,
+    createdAt: DateTime.parse(j['created_at'] as String),
+    replyToId: j['reply_to_id'] as int?,
+    replyText: j['reply_text'] as String?,
+    replySenderName: j['reply_sender_name'] as String?,
+    replyMediaType: j['reply_media_type'] as String?,
+    replyMediaDeleted: j['reply_media_deleted'] as bool? ?? false,
+    mediaType: j['media_type'] as String?,
+    mediaUrl: j['media_url'] as String?,
+    mediaDeleted: j['media_deleted'] as bool? ?? false,
+    reactions: (j['reactions'] as List?)?.map((e) => ReactionModel.fromJson(e as Map<String, dynamic>)).toList() ?? [],
+  );
+
+  GroupMessageModel copyWithReactions(List<ReactionModel> r) => GroupMessageModel(
+    id: id, groupId: groupId, senderId: senderId, senderName: senderName,
+    senderAvatar: senderAvatar, text: text, isSystem: isSystem, createdAt: createdAt,
+    replyToId: replyToId, replyText: replyText, replySenderName: replySenderName,
+    replyMediaType: replyMediaType, replyMediaDeleted: replyMediaDeleted,
+    mediaType: mediaType, mediaUrl: mediaUrl, mediaDeleted: mediaDeleted, reactions: r,
   );
 }

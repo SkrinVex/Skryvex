@@ -25,8 +25,9 @@ class ChatScreen extends StatefulWidget {
   final String partnerName;
   final String? partnerAvatar;
   final bool isSelf;
+  final bool isSystem;
 
-  const ChatScreen({super.key, required this.chatId, required this.partnerName, this.partnerAvatar, this.isSelf = false});
+  const ChatScreen({super.key, required this.chatId, required this.partnerName, this.partnerAvatar, this.isSelf = false, this.isSystem = false});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -337,6 +338,14 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   void _showMessageMenu(BuildContext context, MessageModel msg) {
+    // Системные сообщения (sender_id = null) — только копирование текста
+    if (msg.senderId == null) {
+      if (msg.text != null && msg.text!.isNotEmpty) {
+        Clipboard.setData(ClipboardData(text: msg.text!));
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Скопировано')));
+      }
+      return;
+    }
     final isMe = msg.senderId == _myId;
     final hasMedia = msg.mediaUrl != null && !msg.mediaDeleted;
     showReactionPickerWithMenu(
@@ -373,6 +382,18 @@ class _ChatScreenState extends State<ChatScreen> {
       final idx = _messages.indexWhere((m) => m.id == messageId);
       if (idx != -1 && mounted) setState(() => _messages[idx] = _messages[idx].copyWithReactions(reactions));
     } catch (_) {}
+  }
+
+  Future<void> _resolveAction(MessageModel msg, String action) async {
+    try {
+      await ApiService.post('/chats/${widget.chatId}/messages/${msg.id}/action', {'action': action});
+      final idx = _messages.indexWhere((m) => m.id == msg.id);
+      if (idx != -1 && mounted) {
+        setState(() => _messages[idx] = _messages[idx].copyWithActionResolved());
+      }
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ошибка')));
+    }
   }
 
   void _cancelUpload() {
@@ -469,6 +490,12 @@ class _ChatScreenState extends State<ChatScreen> {
                 backgroundColor: accent.withValues(alpha: 0.15),
                 child: Icon(Icons.bookmark, color: accent, size: 18),
               )
+            else if (widget.isSystem)
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: accent.withValues(alpha: 0.15),
+                child: Icon(Icons.notifications, color: accent, size: 18),
+              )
             else
               CircleAvatar(
                 radius: 18,
@@ -552,6 +579,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                   ? () => _scrollToMessage(msg.replyToId!)
                                   : null,
                               onReact: (emoji) => _toggleReaction(msg.id, emoji),
+                              onAction: msg.actionData != null
+                                  ? (action) => _resolveAction(msg, action)
+                                  : null,
                             );
                           },
                         ),
@@ -576,7 +606,7 @@ class _ChatScreenState extends State<ChatScreen> {
             onCancel: () => setState(() => _replyTo = null),
             onTap: () => _scrollToMessage(_replyTo!.id),
           ),
-          _InputBar(
+          if (!widget.isSystem) _InputBar(
             controller: _msgCtrl,
             onSend: _send,
             onAttach: _showMediaPicker,
@@ -605,6 +635,7 @@ class _SwipeableMessage extends StatefulWidget {
   final VoidCallback onLongPress;
   final VoidCallback? onTapReply;
   final void Function(String)? onReact;
+  final void Function(String action)? onAction;
 
   const _SwipeableMessage({
     super.key,
@@ -616,6 +647,7 @@ class _SwipeableMessage extends StatefulWidget {
     required this.onLongPress,
     this.onTapReply,
     this.onReact,
+    this.onAction,
   });
 
   @override
@@ -673,6 +705,55 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
   @override
   Widget build(BuildContext context) {
     final time = DateFormat('HH:mm').format(widget.message.createdAt.toLocal());
+
+    // Системное сообщение (sender_id = null) — центрированный bubble
+    if (widget.message.senderId == null) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (widget.showDate)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              child: Center(
+                child: Text(_formatDate(widget.message.createdAt),
+                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+              ),
+            ),
+          GestureDetector(
+            onLongPress: widget.onLongPress,
+            child: Center(
+              child: Container(
+                constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.85),
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceVariant,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (widget.message.text != null)
+                      Text(widget.message.text!, style: const TextStyle(color: AppTheme.textPrimary, fontSize: 14)),
+                    if (widget.message.actionData != null &&
+                        widget.message.actionData!['type'] == 'join_request' &&
+                        widget.message.actionData!['resolved'] != true)
+                      _JoinRequestActions(message: widget.message, onAction: widget.onAction),
+                    if (widget.message.actionData != null && widget.message.actionData!['resolved'] == true)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 6),
+                        child: Text('Обработано', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                      ),
+                    const SizedBox(height: 4),
+                    Text(time, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -794,6 +875,14 @@ class _SwipeableMessageState extends State<_SwipeableMessage>
                                 _LinkText(
                                   text: widget.message.text!,
                                   textColor: widget.isMe ? AppTheme.bg : AppTheme.textPrimary,
+                                ),
+                              // Кнопки действий (заявки в группу)
+                              if (widget.message.actionData != null &&
+                                  widget.message.actionData!['type'] == 'join_request' &&
+                                  widget.message.actionData!['resolved'] != true)
+                                _JoinRequestActions(
+                                  message: widget.message,
+                                  onAction: widget.onAction,
                                 ),
                               const SizedBox(height: 3),
                               Text(
@@ -1153,7 +1242,7 @@ class _ReplyPreview extends StatelessWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   Text(
-                    isMe ? 'Вы' : message.senderName,
+                    isMe ? 'Вы' : (message.senderName ?? 'Система'),
                     style: TextStyle(
                         color: AppTheme.orange, fontSize: 12, fontWeight: FontWeight.w600),
                   ),
@@ -1333,6 +1422,52 @@ class _LinkText extends StatelessWidget {
               }
             },
             child: Text(isEmail ? 'Написать' : 'Открыть', style: TextStyle(color: AppTheme.orange)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Join request action buttons ────────────────────────────────────────────
+
+class _JoinRequestActions extends StatelessWidget {
+  final MessageModel message;
+  final void Function(String action)? onAction;
+
+  const _JoinRequestActions({required this.message, this.onAction});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Expanded(
+            child: TextButton(
+              onPressed: () => onAction?.call('reject'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+                backgroundColor: Colors.redAccent.withValues(alpha: 0.1),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              child: const Text('Отклонить', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: TextButton(
+              onPressed: () => onAction?.call('accept'),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.white,
+                backgroundColor: AppTheme.orange,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+              ),
+              child: const Text('Принять', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+            ),
           ),
         ],
       ),

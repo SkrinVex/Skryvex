@@ -10,19 +10,21 @@ const _quickEmojis = ['👍', '❤️', '😂', '😮', '😢', '🔥'];
 Future<String?> showReactionPickerWithMenu(
   BuildContext context, {
   required List<Widget> menuItems,
+  bool showReactions = true,
 }) {
   return showModalBottomSheet<String>(
     context: context,
     backgroundColor: AppTheme.surface,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
-    builder: (ctx) => _ReactionSheet(menuItems: menuItems),
+    builder: (ctx) => _ReactionSheet(menuItems: menuItems, showReactions: showReactions),
   );
 }
 
 class _ReactionSheet extends StatefulWidget {
   final List<Widget> menuItems;
-  const _ReactionSheet({required this.menuItems});
+  final bool showReactions;
+  const _ReactionSheet({required this.menuItems, this.showReactions = true});
   @override
   State<_ReactionSheet> createState() => _ReactionSheetState();
 }
@@ -62,24 +64,26 @@ class _ReactionSheetState extends State<_ReactionSheet> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                ..._quickEmojis.map((e) => _EmojiBtn(emoji: e)),
-                GestureDetector(
-                  onTap: () => setState(() => _showPicker = true),
-                  child: Container(
-                    width: 44, height: 44,
-                    decoration: BoxDecoration(color: AppTheme.surfaceVariant, borderRadius: BorderRadius.circular(22)),
-                    child: const Icon(Icons.add, color: AppTheme.textSecondary, size: 20),
+          if (widget.showReactions) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: [
+                  ..._quickEmojis.map((e) => _EmojiBtn(emoji: e)),
+                  GestureDetector(
+                    onTap: () => setState(() => _showPicker = true),
+                    child: Container(
+                      width: 44, height: 44,
+                      decoration: BoxDecoration(color: AppTheme.surfaceVariant, borderRadius: BorderRadius.circular(22)),
+                      child: const Icon(Icons.add, color: AppTheme.textSecondary, size: 20),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const Divider(height: 1, color: AppTheme.divider),
+            const Divider(height: 1, color: AppTheme.divider),
+          ],
           ...widget.menuItems,
         ],
       ),

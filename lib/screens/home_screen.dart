@@ -16,6 +16,8 @@ import 'profile_screen.dart';
 import 'customization_screen.dart';
 import 'channel_screen.dart';
 import 'create_channel_screen.dart';
+import 'group_screen.dart';
+import 'group_invite_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -254,7 +256,10 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
     _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
     _ws!.stream.listen((raw) {
       final msg = jsonDecode(raw as String) as Map<String, dynamic>;
-      if (msg['type'] == 'message') _refreshChatsBackground();
+      if (msg['type'] == 'message' || msg['type'] == 'system_chat_message') _refreshChatsBackground();
+      if (msg['type'] == 'group_request_accepted' || msg['type'] == 'group_request_rejected') {
+        _refreshChatsBackground();
+      }
     }, onError: (_) {}, onDone: () {});
     for (final chat in _chats) {
       _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': chat.id}));
@@ -327,9 +332,10 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
                         MaterialPageRoute(
                           builder: (_) => ChatScreen(
                             chatId: _chats[i].id,
-                            partnerName: _chats[i].partnerName,
+                            partnerName: _chats[i].isSystem ? 'Уведомления' : (_chats[i].isSelf ? 'Избранное' : _chats[i].partnerName),
                             partnerAvatar: _chats[i].partnerAvatar,
                             isSelf: _chats[i].isSelf,
+                            isSystem: _chats[i].isSystem,
                           ),
                         ),
                       );
@@ -392,9 +398,15 @@ class _ChatTile extends StatelessWidget {
             backgroundColor: accent.withValues(alpha: 0.15),
             child: Icon(Icons.bookmark, color: accent, size: 22),
           )
-        : _Avatar(name: chat.partnerName, url: chat.partnerAvatar, cacheKey: 'avatar_${chat.partnerId}');
+        : chat.isSystem
+            ? CircleAvatar(
+                radius: 24,
+                backgroundColor: accent.withValues(alpha: 0.15),
+                child: Icon(Icons.notifications, color: accent, size: 22),
+              )
+            : _Avatar(name: chat.partnerName, url: chat.partnerAvatar, cacheKey: 'avatar_${chat.partnerId}');
 
-    final title = chat.isSelf ? 'Избранное' : chat.partnerName;
+    final title = chat.isSelf ? 'Избранное' : chat.isSystem ? 'Уведомления' : chat.partnerName;
 
     return ListTile(
       onTap: onTap,
@@ -468,12 +480,14 @@ class _CommunityTabState extends State<_CommunityTab> with SingleTickerProviderS
   late final TabController _tabCtrl;
   List<ChannelModel> _subscribed = [];
   List<ChannelModel> _discover = [];
+  List<GroupModel> _groups = [];
+  List<GroupModel> _discoverGroups = [];
   bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    _tabCtrl = TabController(length: 2, vsync: this);
+    _tabCtrl = TabController(length: 3, vsync: this);
     _tabCtrl.addListener(() { if (!_tabCtrl.indexIsChanging) setState(() {}); });
     _load();
   }
@@ -486,11 +500,15 @@ class _CommunityTabState extends State<_CommunityTab> with SingleTickerProviderS
       final results = await Future.wait([
         ApiService.get('/channels/subscribed'),
         ApiService.get('/channels'),
+        ApiService.get('/groups'),
+        ApiService.get('/groups/discover'),
       ]);
       if (!mounted) return;
       setState(() {
         _subscribed = (results[0] as List).map((e) => ChannelModel.fromJson(e as Map<String, dynamic>)).toList();
         _discover = (results[1] as List).map((e) => ChannelModel.fromJson(e as Map<String, dynamic>)).toList();
+        _groups = (results[2] as List).map((e) => GroupModel.fromJson(e as Map<String, dynamic>)).toList();
+        _discoverGroups = (results[3] as List).map((e) => GroupModel.fromJson(e as Map<String, dynamic>)).toList();
         _loading = false;
       });
     } catch (_) {
@@ -525,64 +543,126 @@ class _CommunityTabState extends State<_CommunityTab> with SingleTickerProviderS
     _load();
   }
 
+  Future<void> _openGroup(GroupModel g) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => GroupScreen(
+      groupId: g.id, groupName: g.name, groupAvatar: g.avatarUrl,
+      isOwner: g.role == 'owner', inviteCode: g.inviteCode,
+    )));
+    _load();
+  }
+
+  Future<void> _joinGroup(GroupModel g) async {
+    try {
+      await ApiService.post('/groups/${g.id}/join', {});
+      _load();
+    } catch (_) {}
+  }
+
+  Future<void> _openGroupPreview(GroupModel g) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => GroupInviteScreen(inviteCode: g.inviteCode ?? '')));
+    _load();
+  }
+
+  Future<void> _createGroup() async {
+    final nameCtrl = TextEditingController();
+    bool isPrivate = false;
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(builder: (ctx, setS) => AlertDialog(
+        backgroundColor: AppTheme.surface,
+        title: const Text('Новая группа', style: TextStyle(color: AppTheme.textPrimary)),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(
+            controller: nameCtrl, autofocus: true,
+            style: const TextStyle(color: AppTheme.textPrimary),
+            decoration: const InputDecoration(hintText: 'Название группы'),
+          ),
+          const SizedBox(height: 16),
+          SwitchListTile(
+            value: isPrivate,
+            onChanged: (v) => setS(() => isPrivate = v),
+            title: const Text('Закрытая группа', style: TextStyle(color: AppTheme.textPrimary, fontSize: 14)),
+            subtitle: const Text('Вступление только по одобрению', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+            contentPadding: EdgeInsets.zero,
+            activeColor: Theme.of(ctx).colorScheme.primary,
+          ),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Отмена')),
+          TextButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Создать')),
+        ],
+      )),
+    );
+    if (result != true || nameCtrl.text.trim().isEmpty) return;
+    try {
+      await ApiService.post('/groups', {'name': nameCtrl.text.trim(), 'is_private': isPrivate});
+      _load();
+    } catch (_) {}
+  }
+
   int get _totalUnread => _subscribed.fold(0, (s, c) => s + c.unreadCount);
+  int get _groupUnread => _groups.fold(0, (s, g) => s + g.unreadCount);
 
   @override
   Widget build(BuildContext context) {
     super.build(context);
     final accent = Theme.of(context).colorScheme.primary;
-    final isCatalog = _tabCtrl.index == 1;
+    final tabIdx = _tabCtrl.index;
     return Scaffold(
       appBar: AppBar(
         title: const Text('Сообщество'),
         actions: [
-          if (isCatalog)
+          if (tabIdx == 1)
             IconButton(icon: Icon(Icons.search, color: accent), onPressed: () async {
               await Navigator.push(context, MaterialPageRoute(builder: (_) => _ChannelSearchScreen(onOpen: _openChannel, onSubscribe: _toggleSubscribe)));
               _load();
             })
+          else if (tabIdx == 0)
+            IconButton(icon: Icon(Icons.add, color: accent), onPressed: () async {
+              final ch = await Navigator.push<ChannelModel>(context, MaterialPageRoute(builder: (_) => const CreateChannelScreen()));
+              if (ch != null) _load();
+            })
           else
-            IconButton(
-              icon: Icon(Icons.add, color: accent),
-              onPressed: () async {
-                final ch = await Navigator.push<ChannelModel>(context, MaterialPageRoute(builder: (_) => const CreateChannelScreen()));
-                if (ch != null) _load();
-              },
-            ),
+            IconButton(icon: Icon(Icons.add, color: accent), onPressed: _createGroup),
         ],
         bottom: PreferredSize(
           preferredSize: const Size.fromHeight(48),
           child: Align(
             alignment: Alignment.centerLeft,
             child: Container(
-            margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-            height: 40,
-            width: isDesktop(context) ? 280 : double.infinity,
-            decoration: BoxDecoration(color: AppTheme.surfaceVariant, borderRadius: BorderRadius.circular(12)),
-            child: TabBar(
-              controller: _tabCtrl,
-              dividerColor: Colors.transparent,
-              indicator: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(10)),
-              indicatorSize: TabBarIndicatorSize.tab,
-              labelColor: AppTheme.bg,
-              unselectedLabelColor: AppTheme.textSecondary,
-              labelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-              unselectedLabelStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.normal),
-              tabs: [
-                Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
-                  const Text('Мои каналы'),
-                  if (_totalUnread > 0) ...[
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(color: AppTheme.bg.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(10)),
-                      child: Text('$_totalUnread', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 11, fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ])),
-                const Tab(text: 'Каталог'),
-              ],
-            ),
+              margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              height: 40,
+              width: isDesktop(context) ? 360 : double.infinity,
+              decoration: BoxDecoration(color: AppTheme.surfaceVariant, borderRadius: BorderRadius.circular(12)),
+              child: TabBar(
+                controller: _tabCtrl,
+                dividerColor: Colors.transparent,
+                indicator: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(10)),
+                indicatorSize: TabBarIndicatorSize.tab,
+                labelColor: AppTheme.bg,
+                unselectedLabelColor: AppTheme.textSecondary,
+                labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                unselectedLabelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.normal),
+                tabs: [
+                  Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Каналы'),
+                    if (_totalUnread > 0) ...[const SizedBox(width: 4),
+                      Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(color: AppTheme.bg.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8)),
+                        child: Text('$_totalUnread', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 10, fontWeight: FontWeight.w600))),
+                    ],
+                  ])),
+                  const Tab(text: 'Каталог'),
+                  Tab(child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    const Text('Группы'),
+                    if (_groupUnread > 0) ...[const SizedBox(width: 4),
+                      Container(padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                        decoration: BoxDecoration(color: AppTheme.bg.withValues(alpha: 0.3), borderRadius: BorderRadius.circular(8)),
+                        child: Text('$_groupUnread', style: const TextStyle(color: AppTheme.textPrimary, fontSize: 10, fontWeight: FontWeight.w600))),
+                    ],
+                  ])),
+                ],
+              ),
             ),
           ),
         ),
@@ -591,9 +671,7 @@ class _CommunityTabState extends State<_CommunityTab> with SingleTickerProviderS
       body: _loading
           ? Center(child: CircularProgressIndicator(color: accent))
           : TabBarView(controller: _tabCtrl, children: [
-              RefreshIndicator(
-                color: accent, backgroundColor: AppTheme.surface,
-                onRefresh: _load,
+              RefreshIndicator(color: accent, backgroundColor: AppTheme.surface, onRefresh: _load,
                 child: _subscribed.isEmpty
                     ? _empty('Вы не подписаны ни на один канал', 'Найдите каналы во вкладке «Каталог»')
                     : _desktopWrap(ListView.separated(
@@ -601,11 +679,8 @@ class _CommunityTabState extends State<_CommunityTab> with SingleTickerProviderS
                         itemCount: _subscribed.length,
                         separatorBuilder: (_, __) => const Divider(height: 1, indent: 72, color: AppTheme.divider),
                         itemBuilder: (_, i) => _ChannelTile(channel: _subscribed[i], onTap: () => _openChannel(_subscribed[i]), onSubscribe: () => _toggleSubscribe(_subscribed[i])),
-                      )),
-              ),
-              RefreshIndicator(
-                color: accent, backgroundColor: AppTheme.surface,
-                onRefresh: _load,
+                      ))),
+              RefreshIndicator(color: accent, backgroundColor: AppTheme.surface, onRefresh: _load,
                 child: _discover.isEmpty
                     ? _empty('Каналов пока нет', 'Создайте первый канал!')
                     : _desktopWrap(ListView.separated(
@@ -613,8 +688,29 @@ class _CommunityTabState extends State<_CommunityTab> with SingleTickerProviderS
                         itemCount: _discover.length,
                         separatorBuilder: (_, __) => const Divider(height: 1, indent: 72, color: AppTheme.divider),
                         itemBuilder: (_, i) => _ChannelTile(channel: _discover[i], onTap: () => _openChannel(_discover[i]), onSubscribe: () => _toggleSubscribe(_discover[i])),
-                      )),
-              ),
+                      ))),
+              RefreshIndicator(color: accent, backgroundColor: AppTheme.surface, onRefresh: _load,
+                child: (_groups.isEmpty && _discoverGroups.isEmpty)
+                    ? _empty('Нет групп', 'Создайте группу нажав +')
+                    : _desktopWrap(ListView(
+                        padding: EdgeInsets.only(bottom: isDesktop(context) ? 24 : 80),
+                        children: [
+                          if (_groups.isNotEmpty) ...[
+                            const Padding(padding: EdgeInsets.fromLTRB(16, 12, 16, 4), child: Text('Мои группы', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600))),
+                            ...List.generate(_groups.length, (i) => Column(children: [
+                              _GroupTile(group: _groups[i], onTap: () => _openGroup(_groups[i])),
+                              if (i < _groups.length - 1) const Divider(height: 1, indent: 72, color: AppTheme.divider),
+                            ])),
+                          ],
+                          if (_discoverGroups.isNotEmpty) ...[
+                            const Padding(padding: EdgeInsets.fromLTRB(16, 16, 16, 4), child: Text('Другие группы', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12, fontWeight: FontWeight.w600))),
+                            ...List.generate(_discoverGroups.length, (i) => Column(children: [
+                              _GroupTile(group: _discoverGroups[i], onTap: () => _openGroupPreview(_discoverGroups[i]), onJoin: () => _joinGroup(_discoverGroups[i]), joinMode: true),
+                              if (i < _discoverGroups.length - 1) const Divider(height: 1, indent: 72, color: AppTheme.divider),
+                            ])),
+                          ],
+                        ],
+                      ))),
             ]),
     );
   }
@@ -662,7 +758,7 @@ class _ChannelTile extends StatelessWidget {
           Container(margin: const EdgeInsets.only(right: 8), padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
             decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(10)),
             child: Text('${channel.unreadCount}', style: TextStyle(color: AppTheme.bg, fontSize: 12, fontWeight: FontWeight.w600))),
-        GestureDetector(
+        if (!channel.isOwner) GestureDetector(
           onTap: onSubscribe,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 200),
@@ -676,6 +772,51 @@ class _ChannelTile extends StatelessWidget {
           ),
         ),
       ]),
+    );
+  }
+}
+
+// ── Group tile ─────────────────────────────────────────────────────────────
+
+class _GroupTile extends StatelessWidget {
+  final GroupModel group;
+  final VoidCallback onTap;
+  final VoidCallback? onJoin;
+  final bool joinMode;
+  const _GroupTile({required this.group, required this.onTap, this.onJoin, this.joinMode = false});
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
+    return ListTile(
+      onTap: onTap,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      leading: CircleAvatar(
+        radius: 24, backgroundColor: AppTheme.surfaceVariant,
+        backgroundImage: group.avatarUrl != null ? CachedNetworkImageProvider(group.avatarUrl!, cacheKey: 'group_${group.id}') : null,
+        child: group.avatarUrl == null
+            ? Text(group.name[0].toUpperCase(), style: TextStyle(color: accent, fontWeight: FontWeight.w600))
+            : null,
+      ),
+      title: Text(group.name, style: TextStyle(color: AppTheme.textPrimary, fontWeight: group.unreadCount > 0 ? FontWeight.w600 : FontWeight.normal)),
+      subtitle: Text('${group.memberCount} участников${!joinMode && group.lastMessage != null ? ' · ${group.lastMessage}' : ''}',
+          maxLines: 1, overflow: TextOverflow.ellipsis,
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+      trailing: joinMode
+          ? GestureDetector(
+              onTap: onJoin ?? onTap,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(20)),
+                child: Text('Вступить', style: TextStyle(color: AppTheme.bg, fontSize: 12, fontWeight: FontWeight.w600)),
+              ),
+            )
+          : group.unreadCount > 0
+              ? Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(color: accent, borderRadius: BorderRadius.circular(10)),
+                  child: Text('${group.unreadCount}', style: TextStyle(color: AppTheme.bg, fontSize: 12, fontWeight: FontWeight.w600)))
+              : null,
     );
   }
 }

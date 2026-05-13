@@ -348,55 +348,56 @@ class _ChannelScreenState extends State<ChannelScreen> {
         child: SizedBox(
           width: isDesktop(context) ? 760 : double.infinity,
           child: Column(children: [
-        Expanded(child: _loading
-          ? Center(child: CircularProgressIndicator(color: accent))
-          : ListView.builder(
-              controller: _scrollCtrl,
-              reverse: true,
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              itemCount: _posts.length + (_uploading ? 1 : 0) + (_loadingMore ? 1 : 0),
-              itemBuilder: (_, i) {
-                if (_uploading && i == 0) {
-                  return _UploadingPostBubble(previewBytes: _uploadPreview, progress: _uploadProgress);
-                }
-                final offset = _uploading ? 1 : 0;
-                if (_loadingMore && i == _posts.length + offset) {
-                  return Padding(padding: const EdgeInsets.all(12), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: accent, strokeWidth: 2))));
-                }
-                final idx = _posts.length - 1 - (i - offset);
-                if (idx < 0 || idx >= _posts.length) return const SizedBox.shrink();
-                final post = _posts[idx];
-                return _SwipeablePost(
-                  key: _postKeys[post.id],
-                  post: post,
-                  channel: widget.channel,
-                  isOwner: _isOwner,
-                  isHighlighted: _highlightedId == post.id,
-                  onDelete: () => _deletePost(post),
-                  onReply: _isOwner ? () => setState(() => _replyTo = post) : null,
-                  onTapReply: post.replyToId != null ? () => _scrollToPost(post.replyToId!) : null,
-                  onReact: (emoji) => _togglePostReaction(post.id, emoji),
-                );
-              },
+            Expanded(child: _loading
+              ? Center(child: CircularProgressIndicator(color: accent))
+              : ListView.builder(
+                  controller: _scrollCtrl,
+                  reverse: true,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  itemCount: _posts.length + (_uploading ? 1 : 0) + (_loadingMore ? 1 : 0),
+                  itemBuilder: (_, i) {
+                    if (_uploading && i == 0) {
+                      return _UploadingPostBubble(previewBytes: _uploadPreview, progress: _uploadProgress);
+                    }
+                    final offset = _uploading ? 1 : 0;
+                    if (_loadingMore && i == _posts.length + offset) {
+                      return Padding(padding: const EdgeInsets.all(12), child: Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: accent, strokeWidth: 2))));
+                    }
+                    final idx = _posts.length - 1 - (i - offset);
+                    if (idx < 0 || idx >= _posts.length) return const SizedBox.shrink();
+                    final post = _posts[idx];
+                    return _SwipeablePost(
+                      key: _postKeys[post.id],
+                      post: post,
+                      channel: widget.channel,
+                      isOwner: _isOwner,
+                      isSubscribed: _isSubscribed,
+                      isHighlighted: _highlightedId == post.id,
+                      onDelete: () => _deletePost(post),
+                      onReply: _isOwner ? () => setState(() => _replyTo = post) : null,
+                      onTapReply: post.replyToId != null ? () => _scrollToPost(post.replyToId!) : null,
+                      onReact: (_isOwner || _isSubscribed) ? (emoji) => _togglePostReaction(post.id, emoji) : null,
+                    );
+                  },
+                ),
             ),
-        ),
-        if (_isOwner) ...[
-          if (_replyTo != null) _PostReplyPreview(
-            post: _replyTo!,
-            onCancel: () => setState(() => _replyTo = null),
-          ),
-          _PostInputBar(
-            controller: _textCtrl,
-            onSend: _sendText,
-            onAttach: () => _showMediaPicker(),
-            uploading: _uploading,
-            progress: _uploadProgress,
-            hasReply: _replyTo != null,
-          ),
-        ],
-        if (!_isOwner && !_isSubscribed)
-          _SubscribeBar(onSubscribe: _subscribe, loading: _subscribing),
-      ]),
+            if (_isOwner) ...[
+              if (_replyTo != null) _PostReplyPreview(
+                post: _replyTo!,
+                onCancel: () => setState(() => _replyTo = null),
+              ),
+              _PostInputBar(
+                controller: _textCtrl,
+                onSend: _sendText,
+                onAttach: () => _showMediaPicker(),
+                uploading: _uploading,
+                progress: _uploadProgress,
+                hasReply: _replyTo != null,
+              ),
+            ],
+            if (!_isOwner && !_isSubscribed)
+              _SubscribeBar(onSubscribe: _subscribe, loading: _subscribing),
+          ]),
         ),
       ),
     );
@@ -667,12 +668,13 @@ class _SwipeablePost extends StatefulWidget {
   final ChannelPostModel post;
   final ChannelModel channel;
   final bool isOwner;
+  final bool isSubscribed;
   final bool isHighlighted;
   final VoidCallback onDelete;
   final VoidCallback? onReply;
   final VoidCallback? onTapReply;
   final void Function(String)? onReact;
-  const _SwipeablePost({super.key, required this.post, required this.channel, required this.isOwner, this.isHighlighted = false, required this.onDelete, this.onReply, this.onTapReply, this.onReact});
+  const _SwipeablePost({super.key, required this.post, required this.channel, required this.isOwner, this.isSubscribed = false, this.isHighlighted = false, required this.onDelete, this.onReply, this.onTapReply, this.onReact});
 
   @override
   State<_SwipeablePost> createState() => _SwipeablePostState();
@@ -715,8 +717,10 @@ class _SwipeablePostState extends State<_SwipeablePost> with SingleTickerProvide
 
   void _showMenu(BuildContext context) {
     final post = widget.post;
+    final canReact = widget.isOwner || widget.isSubscribed;
     showReactionPickerWithMenu(
       context,
+      showReactions: canReact,
       menuItems: [
         if (post.text != null && post.text!.isNotEmpty) ListTile(
           leading: Icon(Icons.copy, color: AppTheme.orange),
@@ -793,26 +797,21 @@ class _SubscribeBar extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
       child: SafeArea(
         top: false,
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            SizedBox(
-              width: isDesktop(context) ? 280 : double.infinity,
-              height: 50,
-              child: ElevatedButton(
-                onPressed: loading ? null : onSubscribe,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: accent,
-                  foregroundColor: AppTheme.bg,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                  elevation: 0,
-                ),
-                child: loading
-                    ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.bg, strokeWidth: 2))
-                    : const Text('Подписаться', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-              ),
+        child: SizedBox(
+          width: isDesktop(context) ? 280 : double.infinity,
+          height: 50,
+          child: ElevatedButton(
+            onPressed: loading ? null : onSubscribe,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: accent,
+              foregroundColor: AppTheme.bg,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              elevation: 0,
             ),
-          ],
+            child: loading
+                ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(color: AppTheme.bg, strokeWidth: 2))
+                : const Text('Подписаться', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+          ),
         ),
       ),
     );
