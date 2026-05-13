@@ -24,8 +24,9 @@ class ChatScreen extends StatefulWidget {
   final int chatId;
   final String partnerName;
   final String? partnerAvatar;
+  final bool isSelf;
 
-  const ChatScreen({super.key, required this.chatId, required this.partnerName, this.partnerAvatar});
+  const ChatScreen({super.key, required this.chatId, required this.partnerName, this.partnerAvatar, this.isSelf = false});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -455,25 +456,33 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
     return Scaffold(
       appBar: AppBar(
         scrolledUnderElevation: 0,
         titleSpacing: 0,
         title: Row(
           children: [
-            CircleAvatar(
-              radius: 18,
-              backgroundColor: AppTheme.surfaceVariant,
-              backgroundImage: widget.partnerAvatar != null
-                  ? CachedNetworkImageProvider(widget.partnerAvatar!, cacheKey: 'avatar_${widget.chatId}_partner')
-                  : null,
-              child: widget.partnerAvatar == null
-                  ? Text(widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : '?',
-                      style: TextStyle(color: AppTheme.orange, fontSize: 14, fontWeight: FontWeight.w600))
-                  : null,
-            ),
+            if (widget.isSelf)
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: accent.withValues(alpha: 0.15),
+                child: Icon(Icons.bookmark, color: accent, size: 18),
+              )
+            else
+              CircleAvatar(
+                radius: 18,
+                backgroundColor: AppTheme.surfaceVariant,
+                backgroundImage: widget.partnerAvatar != null
+                    ? CachedNetworkImageProvider(widget.partnerAvatar!, cacheKey: 'avatar_${widget.chatId}_partner')
+                    : null,
+                child: widget.partnerAvatar == null
+                    ? Text(widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : '?',
+                        style: TextStyle(color: AppTheme.orange, fontSize: 14, fontWeight: FontWeight.w600))
+                    : null,
+              ),
             const SizedBox(width: 10),
-            Text(widget.partnerName),
+            Text(widget.isSelf ? 'Избранное' : widget.partnerName),
           ],
         ),
         leading: IconButton(

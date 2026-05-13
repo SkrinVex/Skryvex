@@ -329,6 +329,7 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
                             chatId: _chats[i].id,
                             partnerName: _chats[i].partnerName,
                             partnerAvatar: _chats[i].partnerAvatar,
+                            isSelf: _chats[i].isSelf,
                           ),
                         ),
                       );
@@ -383,11 +384,23 @@ class _ChatTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasUnread = chat.unreadCount > 0;
+    final accent = Theme.of(context).colorScheme.primary;
+
+    final leading = chat.isSelf
+        ? CircleAvatar(
+            radius: 24,
+            backgroundColor: accent.withValues(alpha: 0.15),
+            child: Icon(Icons.bookmark, color: accent, size: 22),
+          )
+        : _Avatar(name: chat.partnerName, url: chat.partnerAvatar, cacheKey: 'avatar_${chat.partnerId}');
+
+    final title = chat.isSelf ? 'Избранное' : chat.partnerName;
+
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: _Avatar(name: chat.partnerName, url: chat.partnerAvatar, cacheKey: 'avatar_${chat.partnerId}'),
-      title: Text(chat.partnerName,
+      leading: leading,
+      title: Text(title,
           style: TextStyle(
             color: AppTheme.textPrimary,
             fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,

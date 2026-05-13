@@ -44,6 +44,7 @@ class ChatModel {
   final String? lastMessage;
   final DateTime? lastMessageAt;
   final int unreadCount;
+  final bool isSelf;
 
   const ChatModel({
     required this.id,
@@ -53,6 +54,7 @@ class ChatModel {
     this.lastMessage,
     this.lastMessageAt,
     this.unreadCount = 0,
+    this.isSelf = false,
   });
 
   factory ChatModel.fromJson(Map<String, dynamic> j) => ChatModel(
@@ -65,6 +67,7 @@ class ChatModel {
             ? DateTime.parse(j['last_message_at'] as String)
             : null,
         unreadCount: int.tryParse(j['unread_count']?.toString() ?? '0') ?? 0,
+        isSelf: j['is_self'] as bool? ?? false,
       );
 }
 
