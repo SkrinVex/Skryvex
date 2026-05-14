@@ -40,15 +40,15 @@ class _LoginScreenState extends State<LoginScreen> {
         await prefs.setString('user', jsonEncode(res['user']));
         if (mounted) Navigator.pushReplacementNamed(context, '/home');
       } else if (res['error'] == 'Email не подтверждён') {
-        // Перекидываем на верификацию
         if (mounted) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => VerifyScreen(email: _emailCtrl.text.trim()),
-            ),
-          );
+          Navigator.push(context, MaterialPageRoute(builder: (_) => VerifyScreen(email: _emailCtrl.text.trim())));
         }
+      } else if (res['error'] == 'banned') {
+        setState(() => _error = res['reason'] != null
+            ? 'Аккаунт заблокирован. Причина: ${res['reason']}'
+            : 'Ваш аккаунт заблокирован администратором.');
+      } else if (res['error'] == 'restricted') {
+        setState(() => _error = 'Доступ к вашему аккаунту временно ограничен.');
       } else {
         setState(() => _error = res['error'] as String? ?? 'Ошибка входа');
       }

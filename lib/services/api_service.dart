@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'app_state.dart';
 
 class ApiService {
   static const _base = 'https://api.skrinvex.su/api';
@@ -19,6 +20,17 @@ class ApiService {
     return h;
   }
 
+  static void _check403(http.Response res) {
+    if (res.statusCode == 403) {
+      try {
+        final body = jsonDecode(res.body) as Map<String, dynamic>;
+        final err = body['error'] as String?;
+        if (err == 'banned') AppState.instance.setBanned(reason: body['reason'] as String?);
+        if (err == 'restricted') AppState.instance.setRestricted();
+      } catch (_) {}
+    }
+  }
+
   static Future<Map<String, dynamic>> post(
     String path,
     Map<String, dynamic> body, {
@@ -29,6 +41,7 @@ class ApiService {
       headers: await _headers(auth: auth),
       body: jsonEncode(body),
     );
+    _check403(res);
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
@@ -37,6 +50,7 @@ class ApiService {
       Uri.parse('$_base$path'),
       headers: await _headers(),
     );
+    _check403(res);
     return jsonDecode(res.body);
   }
 
@@ -46,6 +60,7 @@ class ApiService {
       headers: await _headers(),
       body: jsonEncode(body),
     );
+    _check403(res);
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
@@ -54,6 +69,7 @@ class ApiService {
       Uri.parse('$_base$path'),
       headers: await _headers(),
     );
+    _check403(res);
     return jsonDecode(res.body) as Map<String, dynamic>;
   }
 
