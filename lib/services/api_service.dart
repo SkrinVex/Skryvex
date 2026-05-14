@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:http/http.dart' as http;
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'app_state.dart';
 
@@ -10,8 +11,14 @@ class ApiService {
   static const baseUrl = 'https://api.skrinvex.su/api';
   static const wsBase = 'wss://api.skrinvex.su/ws';
 
+  static String? _appVersion;
+
   static Future<Map<String, String>> _headers({bool auth = true}) async {
-    final h = <String, String>{'Content-Type': 'application/json'};
+    _appVersion ??= (await PackageInfo.fromPlatform()).version;
+    final h = <String, String>{
+      'Content-Type': 'application/json',
+      'X-App-Version': _appVersion!,
+    };
     if (auth) {
       final prefs = await SharedPreferences.getInstance();
       final t = prefs.getString('token');
@@ -21,6 +28,10 @@ class ApiService {
   }
 
   static void _check403(http.Response res) {
+    if (res.statusCode == 426) {
+      AppState.instance.setUpdateRequired();
+      return;
+    }
     if (res.statusCode == 403) {
       try {
         final body = jsonDecode(res.body) as Map<String, dynamic>;

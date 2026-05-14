@@ -2,11 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:app_links/app_links.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/group_invite_screen.dart';
 import 'screens/channel_invite_screen.dart';
 import 'screens/user_profile_screen.dart';
+import 'screens/update_screen.dart';
 import 'services/app_settings.dart';
 import 'services/app_state.dart';
 import 'theme.dart';
@@ -17,8 +19,8 @@ void main() async {
   await AppSettings.instance.load();
   final prefs = await SharedPreferences.getInstance();
   final token = prefs.getString('token');
-  // Health check до показа UI
-  final healthy = await AppState.instance.checkHealth();
+  final info = await PackageInfo.fromPlatform();
+  final healthy = await AppState.instance.checkHealth(currentVersion: info.version);
   runApp(SkryvexApp(
     initialRoute: (!healthy || token == null) ? '/login' : '/home',
   ));
@@ -120,6 +122,10 @@ class _SkryvexAppState extends State<SkryvexApp> {
         // Maintenance overlay — поверх всего
         if (state.maintenance) {
           return const _MaintenanceScreen();
+        }
+        // Требуется обновление
+        if (state.updateRequired) {
+          return const UpdateScreen();
         }
         // Restricted — тот же экран что и maintenance (доступ закрыт, но без retry)
         if (state.restricted) {

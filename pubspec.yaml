@@ -1,6 +1,6 @@
 name: skryvex
 description: "Skryvex messenger"
-publish_to: 'none'
+publish_to: "none"
 version: 1.0.0+1
 
 environment:
@@ -29,6 +29,9 @@ dependencies:
   url_launcher: ^6.3.2
   emoji_picker_flutter: ^4.4.0
   app_links: ^6.4.0
+  package_info_plus: ^9.0.1
+  open_file: ^3.5.11
+  archive: ^4.0.9
 
 dev_dependencies:
   flutter_test:
