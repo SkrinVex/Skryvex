@@ -29,9 +29,14 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
   int _chatUnread = 0;
+  int _communityUnread = 0;
 
   void updateChatUnread(int count) {
     if (mounted && count != _chatUnread) setState(() => _chatUnread = count);
+  }
+
+  void updateCommunityUnread(int count) {
+    if (mounted && count != _communityUnread) setState(() => _communityUnread = count);
   }
 
   @override
@@ -57,7 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
     final tabs = [
       _ChatsTab(onUnreadChanged: updateChatUnread),
-      const _CommunityTab(),
+      _CommunityTab(onUnreadChanged: updateCommunityUnread),
       const _SettingsTab(),
     ];
 
@@ -80,7 +85,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     const Divider(color: AppTheme.divider, height: 1),
                     const SizedBox(height: 8),
                     _SidebarItem(icon: Icons.chat_bubble_outline, selectedIcon: Icons.chat_bubble, label: 'Чаты', selected: _tab == 0, badge: _chatUnread, onTap: () => setState(() => _tab = 0)),
-                    _SidebarItem(icon: Icons.explore_outlined, selectedIcon: Icons.explore, label: 'Сообщество', selected: _tab == 1, onTap: () => setState(() => _tab = 1)),
+                    _SidebarItem(icon: Icons.explore_outlined, selectedIcon: Icons.explore, label: 'Сообщество', selected: _tab == 1, badge: _communityUnread, onTap: () => setState(() => _tab = 1)),
                     _SidebarItem(icon: Icons.settings_outlined, selectedIcon: Icons.settings, label: 'Настройки', selected: _tab == 2, onTap: () => setState(() => _tab = 2)),
                   ],
                 ),
@@ -126,7 +131,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 selectedIcon: Badge(isLabelVisible: _chatUnread > 0, label: Text('$_chatUnread'), child: const Icon(Icons.chat_bubble)),
                 label: 'Чаты',
               ),
-              const NavigationDestination(icon: Icon(Icons.explore_outlined), selectedIcon: Icon(Icons.explore), label: 'Сообщество'),
+              NavigationDestination(
+                icon: Badge(isLabelVisible: _communityUnread > 0, label: Text('$_communityUnread'), child: const Icon(Icons.explore_outlined)),
+                selectedIcon: Badge(isLabelVisible: _communityUnread > 0, label: Text('$_communityUnread'), child: const Icon(Icons.explore)),
+                label: 'Сообщество',
+              ),
               const NavigationDestination(icon: Icon(Icons.settings_outlined), selectedIcon: Icon(Icons.settings), label: 'Настройки'),
             ],
           ),
@@ -327,6 +336,19 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
                   itemBuilder: (_, i) => _ChatTile(
                     chat: _chats[i],
                     onTap: () async {
+                      // Сразу обнуляем unread локально чтобы не мигал маркер при возврате
+                      if (_chats[i].unreadCount > 0) {
+                        setState(() {
+                          _chats[i] = ChatModel(
+                            id: _chats[i].id, partnerId: _chats[i].partnerId,
+                            partnerName: _chats[i].partnerName, partnerAvatar: _chats[i].partnerAvatar,
+                            lastMessage: _chats[i].lastMessage, lastMessageAt: _chats[i].lastMessageAt,
+                            unreadCount: 0, isSelf: _chats[i].isSelf, isSystem: _chats[i].isSystem,
+                          );
+                          final unread = _chats.fold(0, (s, c) => s + c.unreadCount);
+                          widget.onUnreadChanged?.call(unread);
+                        });
+                      }
                       await Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -467,7 +489,8 @@ class _Avatar extends StatelessWidget {
 // ── Community tab ──────────────────────────────────────────────────────────
 
 class _CommunityTab extends StatefulWidget {
-  const _CommunityTab();
+  final void Function(int)? onUnreadChanged;
+  const _CommunityTab({this.onUnreadChanged});
 
   @override
   State<_CommunityTab> createState() => _CommunityTabState();
@@ -511,6 +534,8 @@ class _CommunityTabState extends State<_CommunityTab> with SingleTickerProviderS
         _discoverGroups = (results[3] as List).map((e) => GroupModel.fromJson(e as Map<String, dynamic>)).toList();
         _loading = false;
       });
+      final totalUnread = _subscribed.fold<int>(0, (s, c) => s + c.unreadCount) + _groups.fold<int>(0, (s, g) => s + g.unreadCount);
+      widget.onUnreadChanged?.call(totalUnread);
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }

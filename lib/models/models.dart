@@ -165,6 +165,7 @@ class ChannelModel {
   final int unreadCount;
   final String? lastPost;
   final bool isOwner;
+  final String? inviteCode;
 
   const ChannelModel({
     required this.id,
@@ -178,6 +179,7 @@ class ChannelModel {
     required this.unreadCount,
     this.lastPost,
     this.isOwner = false,
+    this.inviteCode,
   });
 
   factory ChannelModel.fromJson(Map<String, dynamic> j) => ChannelModel(
@@ -192,15 +194,17 @@ class ChannelModel {
         unreadCount: int.tryParse(j['unread_count']?.toString() ?? '0') ?? 0,
         lastPost: j['last_post'] as String?,
         isOwner: j['is_owner'] as bool? ?? false,
+        inviteCode: j['invite_code'] as String?,
       );
 
-  ChannelModel copyWith({bool? subscribed, int? unreadCount, String? avatarUrl, int? subscriberCount}) => ChannelModel(
+  ChannelModel copyWith({bool? subscribed, int? unreadCount, String? avatarUrl, int? subscriberCount, String? inviteCode}) => ChannelModel(
         id: id, ownerId: ownerId, name: name, username: username,
         description: description, avatarUrl: avatarUrl ?? this.avatarUrl,
         subscriberCount: subscriberCount ?? this.subscriberCount,
         subscribed: subscribed ?? this.subscribed,
         unreadCount: unreadCount ?? this.unreadCount,
         lastPost: lastPost, isOwner: isOwner,
+        inviteCode: inviteCode ?? this.inviteCode,
       );
 }
 

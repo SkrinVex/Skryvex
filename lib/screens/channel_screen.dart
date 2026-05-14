@@ -287,13 +287,20 @@ class _ChannelScreenState extends State<ChannelScreen> {
     super.dispose();
   }
 
-  void _showOwnerMenu() {
+  void _copyInviteLink() {
+    final code = _channel.inviteCode;
+    if (code == null) return;
+    Clipboard.setData(ClipboardData(text: 'https://api.skrinvex.su/channel/$code'));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Ссылка скопирована')));
+  }
+
+  void _showMenu() {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.surface,
       shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(16))),
       builder: (_) => SafeArea(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        ListTile(
+        if (_isOwner) ListTile(
           leading: Icon(Icons.edit, color: AppTheme.orange),
           title: const Text('Настройки канала', style: TextStyle(color: AppTheme.textPrimary)),
           onTap: () async {
@@ -302,7 +309,12 @@ class _ChannelScreenState extends State<ChannelScreen> {
             if (updated != null && mounted) setState(() => _channel = updated);
           },
         ),
-        ListTile(
+        if (_channel.inviteCode != null) ListTile(
+          leading: Icon(Icons.link, color: AppTheme.orange),
+          title: const Text('Скопировать ссылку', style: TextStyle(color: AppTheme.textPrimary)),
+          onTap: () { Navigator.pop(context); _copyInviteLink(); },
+        ),
+        if (_isOwner) ListTile(
           leading: const Icon(Icons.delete_forever, color: Colors.redAccent),
           title: const Text('Удалить канал', style: TextStyle(color: Colors.redAccent)),
           onTap: () { Navigator.pop(context); _deleteChannel(); },
@@ -338,9 +350,9 @@ class _ChannelScreenState extends State<ChannelScreen> {
         ]),
         leading: IconButton(icon: const Icon(Icons.arrow_back), onPressed: () => Navigator.pop(context), padding: const EdgeInsets.only(left: 8)),
         actions: [
-          if (_isOwner) IconButton(
+          if (_isOwner || _isSubscribed) IconButton(
             icon: const Icon(Icons.more_vert),
-            onPressed: _showOwnerMenu,
+            onPressed: _showMenu,
           ),
         ],
       ),

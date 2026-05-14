@@ -548,7 +548,7 @@ class _GroupScreenState extends State<GroupScreen> {
 
 // ── Message bubble ─────────────────────────────────────────────────────────
 
-class _GroupMessageBubble extends StatelessWidget {
+class _GroupMessageBubble extends StatefulWidget {
   final GroupMessageModel message;
   final bool isMe;
   final bool showDate;
@@ -573,17 +573,65 @@ class _GroupMessageBubble extends StatelessWidget {
   });
 
   @override
+  State<_GroupMessageBubble> createState() => _GroupMessageBubbleState();
+}
+
+class _GroupMessageBubbleState extends State<_GroupMessageBubble>
+    with SingleTickerProviderStateMixin {
+  double _dragX = 0;
+  bool _triggered = false;
+  late AnimationController _snapCtrl;
+  late Animation<double> _snapAnim;
+
+  @override
+  void initState() {
+    super.initState();
+    _snapCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 200));
+    _snapAnim = Tween<double>(begin: 0, end: 0).animate(_snapCtrl);
+    _snapCtrl.addListener(() => setState(() => _dragX = _snapAnim.value));
+  }
+
+  @override
+  void dispose() {
+    _snapCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    if (widget.message.isSystem) return;
+    final dx = d.delta.dx;
+    final isCorrectDirection = widget.isMe ? dx < 0 : dx > 0;
+    if (!isCorrectDirection && _dragX == 0) return;
+    final newX = (_dragX + dx).clamp(widget.isMe ? -70.0 : 0.0, widget.isMe ? 0.0 : 70.0);
+    setState(() => _dragX = newX);
+    if (_dragX.abs() >= 65 && !_triggered) {
+      _triggered = true;
+      HapticFeedback.lightImpact();
+      widget.onReply();
+    }
+  }
+
+  void _onDragEnd(DragEndDetails _) {
+    _triggered = false;
+    _snapAnim = Tween<double>(begin: _dragX, end: 0).animate(
+      CurvedAnimation(parent: _snapCtrl, curve: Curves.easeOut),
+    );
+    _snapCtrl.forward(from: 0);
+  }
+
+  @override
   Widget build(BuildContext context) {
-    // Системное сообщение — по центру
-    if (message.isSystem) {
+    final msg = widget.message;
+    // Системное сообщение — по центру, без свайпа
+    if (msg.isSystem) {
       Widget sys = Center(child: Container(
         margin: const EdgeInsets.symmetric(vertical: 4),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
         decoration: BoxDecoration(color: AppTheme.surfaceVariant, borderRadius: BorderRadius.circular(12)),
-        child: Text(message.text ?? '', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+        child: Text(msg.text ?? '', style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
       ));
-      if (showDate) {
-        final dateStr = DateFormat('d MMMM', 'ru').format(message.createdAt.toLocal());
+      if (widget.showDate) {
+        final dateStr = DateFormat('d MMMM', 'ru').format(msg.createdAt.toLocal());
         return Column(children: [
           Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Center(child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -597,106 +645,120 @@ class _GroupMessageBubble extends StatelessWidget {
     }
 
     final accent = Theme.of(context).colorScheme.primary;
-    final time = DateFormat('HH:mm').format(message.createdAt.toLocal());
-    final bubbleColor = isMe ? accent.withValues(alpha: 0.18) : AppTheme.surface;
+    final time = DateFormat('HH:mm').format(msg.createdAt.toLocal());
+    final bubbleColor = widget.isMe ? accent.withValues(alpha: 0.18) : AppTheme.surface;
 
     Widget bubble = GestureDetector(
-      onLongPress: onLongPress,
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 200),
-        color: isHighlighted ? AppTheme.orange.withValues(alpha: 0.12) : Colors.transparent,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              // Аватар слева для чужих
-              if (!isMe) SizedBox(
-                width: 36,
-                child: showAvatar
-                    ? CircleAvatar(
-                        radius: 16, backgroundColor: AppTheme.surfaceVariant,
-                        backgroundImage: message.senderAvatar != null
-                            ? CachedNetworkImageProvider(message.senderAvatar!, cacheKey: 'u_${message.senderId}')
-                            : null,
-                        child: message.senderAvatar == null
-                            ? Text((message.senderName ?? '?')[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600))
-                            : null,
-                      )
-                    : null,
+      onHorizontalDragUpdate: _onDragUpdate,
+      onHorizontalDragEnd: _onDragEnd,
+      onLongPress: widget.onLongPress,
+      behavior: HitTestBehavior.translucent,
+      child: Transform.translate(
+        offset: Offset(_dragX, 0),
+        child: Stack(children: [
+          // Reply arrow hint
+          Positioned(
+            left: widget.isMe ? null : 0,
+            right: widget.isMe ? 0 : null,
+            top: 0, bottom: 0,
+            child: AnimatedOpacity(
+              opacity: (_dragX.abs() / 50).clamp(0.0, 1.0),
+              duration: const Duration(milliseconds: 50),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Icon(Icons.reply_rounded, color: AppTheme.orange, size: 20),
               ),
-              if (!isMe) const SizedBox(width: 4),
-              // Spacer слева для своих сообщений
-              if (isMe) const Spacer(),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 320),
-                child: Container(
-                    margin: const EdgeInsets.symmetric(vertical: 1),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: bubbleColor,
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(16),
-                        topRight: const Radius.circular(16),
-                        bottomLeft: Radius.circular(isMe ? 16 : 4),
-                        bottomRight: Radius.circular(isMe ? 4 : 16),
-                      ),
-                    ),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                      // Имя отправителя для чужих
-                      if (!isMe) Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(message.senderName ?? '', style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600)),
-                      ),
-                      // Reply
-                      if (message.replyToId != null) GestureDetector(
-                        onTap: onTapReply,
-                        child: Container(
-                          margin: const EdgeInsets.only(bottom: 6),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: AppTheme.surfaceVariant,
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border(left: BorderSide(color: accent, width: 3)),
-                          ),
-                          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-                            if (message.replySenderName != null) Text(message.replySenderName!, style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w600)),
-                            Text(_replyPreview(), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-                          ]),
-                        ),
-                      ),
-                      // Media
-                      if (message.mediaType != null) _buildMedia(context),
-                      // Text
-                      if (message.text != null && message.text!.isNotEmpty)
-                        Padding(
-                          padding: EdgeInsets.only(top: message.mediaType != null ? 6 : 0),
-                          child: _LinkText(text: message.text!, textColor: AppTheme.textPrimary),
-                        ),
-                      // Time
-                      Align(
-                        alignment: Alignment.bottomRight,
-                        child: Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(time, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
-                        ),
-                      ),
-                      // Reactions
-                      if (message.reactions.isNotEmpty)
-                        ChatReactionsRow(reactions: message.reactions, onTap: onReact),
-                    ]),
-                  ),
-                ),
-              // Spacer справа для чужих сообщений
-              if (!isMe) const Spacer(),
-            ],
+            ),
           ),
-        ),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            color: widget.isHighlighted ? AppTheme.orange.withValues(alpha: 0.12) : Colors.transparent,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 2),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  // Аватар слева для чужих
+                  if (!widget.isMe) SizedBox(
+                    width: 36,
+                    child: widget.showAvatar
+                        ? CircleAvatar(
+                            radius: 16, backgroundColor: AppTheme.surfaceVariant,
+                            backgroundImage: msg.senderAvatar != null
+                                ? CachedNetworkImageProvider(msg.senderAvatar!, cacheKey: 'u_${msg.senderId}')
+                                : null,
+                            child: msg.senderAvatar == null
+                                ? Text((msg.senderName ?? '?')[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600))
+                                : null,
+                          )
+                        : null,
+                  ),
+                  if (!widget.isMe) const SizedBox(width: 4),
+                  if (widget.isMe) const Spacer(),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 320),
+                    child: Container(
+                      margin: const EdgeInsets.symmetric(vertical: 1),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: bubbleColor,
+                        borderRadius: BorderRadius.only(
+                          topLeft: const Radius.circular(16),
+                          topRight: const Radius.circular(16),
+                          bottomLeft: Radius.circular(widget.isMe ? 16 : 4),
+                          bottomRight: Radius.circular(widget.isMe ? 4 : 16),
+                        ),
+                      ),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                        if (!widget.isMe) Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Text(msg.senderName ?? '', style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600)),
+                        ),
+                        if (msg.replyToId != null) GestureDetector(
+                          onTap: widget.onTapReply,
+                          child: Container(
+                            margin: const EdgeInsets.only(bottom: 6),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: AppTheme.surfaceVariant,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border(left: BorderSide(color: accent, width: 3)),
+                            ),
+                            child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+                              if (msg.replySenderName != null) Text(msg.replySenderName!, style: TextStyle(color: accent, fontSize: 11, fontWeight: FontWeight.w600)),
+                              Text(_replyPreview(msg), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+                            ]),
+                          ),
+                        ),
+                        if (msg.mediaType != null) _buildMedia(context, msg),
+                        if (msg.text != null && msg.text!.isNotEmpty)
+                          Padding(
+                            padding: EdgeInsets.only(top: msg.mediaType != null ? 6 : 0),
+                            child: _LinkText(text: msg.text!, textColor: AppTheme.textPrimary),
+                          ),
+                        Align(
+                          alignment: Alignment.bottomRight,
+                          child: Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(time, style: const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+                          ),
+                        ),
+                        if (msg.reactions.isNotEmpty)
+                          ChatReactionsRow(reactions: msg.reactions, onTap: widget.onReact),
+                      ]),
+                    ),
+                  ),
+                  if (!widget.isMe) const Spacer(),
+                ],
+              ),
+            ),
+          ),
+        ]),
       ),
     );
 
-    if (showDate) {
-      final dateStr = DateFormat('d MMMM', 'ru').format(message.createdAt.toLocal());
+    if (widget.showDate) {
+      final dateStr = DateFormat('d MMMM', 'ru').format(msg.createdAt.toLocal());
       return Column(children: [
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -712,40 +774,32 @@ class _GroupMessageBubble extends StatelessWidget {
     return bubble;
   }
 
-  String _replyPreview() {
-    if (message.replyMediaDeleted) return '🗑 Медиа удалено';
-    if (message.replyMediaType == 'image') return '📷 Фото';
-    if (message.replyMediaType == 'video') return '🎥 Видео';
-    return message.replyText ?? '';
+  String _replyPreview(GroupMessageModel msg) {
+    if (msg.replyMediaDeleted) return '🗑 Медиа удалено';
+    if (msg.replyMediaType == 'image') return '📷 Фото';
+    if (msg.replyMediaType == 'video') return '🎥 Видео';
+    return msg.replyText ?? '';
   }
 
-  Widget _buildMedia(BuildContext context) {
-    if (message.mediaDeleted) {
+  Widget _buildMedia(BuildContext context, GroupMessageModel msg) {
+    if (msg.mediaDeleted) {
       return Container(
         height: 60, decoration: BoxDecoration(color: AppTheme.surfaceVariant, borderRadius: BorderRadius.circular(8)),
         child: const Center(child: Text('🗑 Медиа удалено', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13))),
       );
     }
-    if (message.mediaType == 'image' && message.mediaUrl != null) {
+    if (msg.mediaType == 'image' && msg.mediaUrl != null) {
       return GestureDetector(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PhotoViewScreen(url: message.mediaUrl!, cacheKey: 'gm_img_${message.id}'))),
+        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PhotoViewScreen(url: msg.mediaUrl!, cacheKey: 'gm_img_${msg.id}'))),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(8),
-          child: CachedNetworkImage(imageUrl: message.mediaUrl!, cacheKey: 'gm_img_${message.id}', width: 220, height: 180, fit: BoxFit.cover,
+          child: CachedNetworkImage(imageUrl: msg.mediaUrl!, cacheKey: 'gm_img_${msg.id}', width: 220, height: 180, fit: BoxFit.cover,
             placeholder: (_, __) => Container(width: 220, height: 180, color: AppTheme.surfaceVariant, child: Center(child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2)))),
         ),
       );
     }
-    if (message.mediaType == 'video' && message.mediaUrl != null) {
-      return GestureDetector(
-        onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => VideoPlayerScreen(url: message.mediaUrl!))),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: Container(width: 220, height: 140, color: Colors.black,
-            child: Center(child: Container(width: 48, height: 48, decoration: const BoxDecoration(color: Colors.black54, shape: BoxShape.circle),
-              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30)))),
-        ),
-      );
+    if (msg.mediaType == 'video' && msg.mediaUrl != null) {
+      return _GroupVideoThumbnail(url: msg.mediaUrl!, messageId: msg.id);
     }
     return const SizedBox.shrink();
   }
@@ -847,6 +901,65 @@ class _GroupUploadingBubble extends StatelessWidget {
               if (progress > 0) ...[const SizedBox(height: 4), Text('${(progress * 100).toInt()}%', style: const TextStyle(color: Colors.white, fontSize: 12))],
             ])),
         ]),
+      ),
+    );
+  }
+}
+
+// ── Group video thumbnail ──────────────────────────────────────────────────
+
+class _GroupVideoThumbnail extends StatefulWidget {
+  final String url;
+  final int messageId;
+  const _GroupVideoThumbnail({required this.url, required this.messageId});
+
+  @override
+  State<_GroupVideoThumbnail> createState() => _GroupVideoThumbnailState();
+}
+
+class _GroupVideoThumbnailState extends State<_GroupVideoThumbnail> {
+  Uint8List? _thumb;
+  bool _deleted = false;
+
+  @override
+  void initState() {
+    super.initState();
+    generateVideoThumbnail(widget.url).then((result) {
+      if (mounted) setState(() { _thumb = result.bytes; _deleted = result.deleted; });
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_deleted) {
+      return Container(
+        width: 220, padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.08), borderRadius: BorderRadius.circular(8)),
+        child: const Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(Icons.delete_outline, size: 18, color: AppTheme.textSecondary),
+          SizedBox(width: 6),
+          Text('Медиа удалено', style: TextStyle(color: AppTheme.textSecondary, fontSize: 13, fontStyle: FontStyle.italic)),
+        ]),
+      );
+    }
+    return GestureDetector(
+      onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => VideoPlayerScreen(url: widget.url))),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 220, height: 140,
+          child: Stack(fit: StackFit.expand, children: [
+            if (_thumb != null)
+              Image.memory(_thumb!, fit: BoxFit.cover)
+            else
+              Container(color: Colors.black54, child: Center(child: SizedBox(width: 24, height: 24, child: CircularProgressIndicator(color: AppTheme.orange, strokeWidth: 2)))),
+            Center(child: Container(
+              width: 48, height: 48,
+              decoration: BoxDecoration(color: Colors.black.withValues(alpha: 0.55), shape: BoxShape.circle),
+              child: const Icon(Icons.play_arrow_rounded, color: Colors.white, size: 30),
+            )),
+          ]),
+        ),
       ),
     );
   }

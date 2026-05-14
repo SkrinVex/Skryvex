@@ -5,6 +5,7 @@ import 'package:app_links/app_links.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/group_invite_screen.dart';
+import 'screens/channel_invite_screen.dart';
 import 'services/app_settings.dart';
 import 'theme.dart';
 
@@ -47,19 +48,26 @@ class _SkryvexAppState extends State<SkryvexApp> {
   }
 
   void _handleLink(Uri uri) {
+    // Группы: https://api.skrinvex.su/invite/:code  или  skryvex://invite/:code
+    // Каналы: https://api.skrinvex.su/channel/:code  или  skryvex://channel/:code
     String? inviteCode;
-    if (uri.scheme == 'https' && uri.host == 'api.skrinvex.su' &&
-        uri.pathSegments.length == 2 && uri.pathSegments[0] == 'invite') {
-      inviteCode = uri.pathSegments[1];
-    } else if (uri.scheme == 'skryvex' && uri.host == 'invite' && uri.pathSegments.isNotEmpty) {
-      inviteCode = uri.pathSegments[0];
+    String? channelCode;
+
+    if (uri.scheme == 'https' && uri.host == 'api.skrinvex.su' && uri.pathSegments.length == 2) {
+      if (uri.pathSegments[0] == 'invite') inviteCode = uri.pathSegments[1];
+      else if (uri.pathSegments[0] == 'channel') channelCode = uri.pathSegments[1];
+    } else if (uri.scheme == 'skryvex' && uri.pathSegments.isNotEmpty) {
+      if (uri.host == 'invite') inviteCode = uri.pathSegments[0];
+      else if (uri.host == 'channel') channelCode = uri.pathSegments[0];
     }
-    if (inviteCode == null) return;
-    final code = inviteCode;
-    // push поверх текущего стека — чтобы назад возвращало на HomeScreen, а не выходило из приложения
-    _navKey.currentState?.push(MaterialPageRoute(
-      builder: (_) => GroupInviteScreen(inviteCode: code),
-    ));
+
+    if (inviteCode != null) {
+      final code = inviteCode;
+      _navKey.currentState?.push(MaterialPageRoute(builder: (_) => GroupInviteScreen(inviteCode: code)));
+    } else if (channelCode != null) {
+      final code = channelCode;
+      _navKey.currentState?.push(MaterialPageRoute(builder: (_) => ChannelInviteScreen(inviteCode: code)));
+    }
   }
 
   @override
@@ -86,8 +94,13 @@ class _SkryvexAppState extends State<SkryvexApp> {
       },
       onGenerateRoute: (settings) {
         final uri = Uri.tryParse(settings.name ?? '');
-        if (uri != null && uri.pathSegments.length == 2 && uri.pathSegments[0] == 'invite') {
-          return MaterialPageRoute(builder: (_) => GroupInviteScreen(inviteCode: uri.pathSegments[1]));
+        if (uri != null && uri.pathSegments.length == 2) {
+          if (uri.pathSegments[0] == 'invite') {
+            return MaterialPageRoute(builder: (_) => GroupInviteScreen(inviteCode: uri.pathSegments[1]));
+          }
+          if (uri.pathSegments[0] == 'channel') {
+            return MaterialPageRoute(builder: (_) => ChannelInviteScreen(inviteCode: uri.pathSegments[1]));
+          }
         }
         return null;
       },
