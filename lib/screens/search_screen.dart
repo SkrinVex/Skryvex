@@ -1,7 +1,8 @@
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
-import 'chat_screen.dart';
+import 'user_profile_screen.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -15,39 +16,25 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Map<String, dynamic>> _results = [];
   bool _loading = false;
 
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
   Future<void> _search(String q) async {
-    if (q.length < 2) {
-      setState(() => _results = []);
-      return;
-    }
+    if (q.trim().length < 2) { setState(() => _results = []); return; }
     setState(() => _loading = true);
     try {
-      final data = await ApiService.get('/auth/search?q=${Uri.encodeComponent(q)}') as List<dynamic>;
-      setState(() => _results = data.cast<Map<String, dynamic>>());
+      final data = await ApiService.get('/auth/search?q=${Uri.encodeComponent(q.trim())}') as List<dynamic>;
+      if (mounted) setState(() => _results = data.cast<Map<String, dynamic>>());
     } catch (_) {
-      setState(() => _results = []);
+      if (mounted) setState(() => _results = []);
     } finally {
       if (mounted) setState(() => _loading = false);
     }
   }
 
-  Future<void> _openChat(int userId, String name) async {
-    try {
-      final res = await ApiService.post('/chats', {'userId': userId}, auth: true);
-      final chatId = res['chatId'] as int?;
-      if (chatId != null && mounted) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => ChatScreen(chatId: chatId, partnerName: name),
-          ),
-        );
-      }
-    } catch (_) {}
-  }
-
   @override
   Widget build(BuildContext context) {
+    final accent = Theme.of(context).colorScheme.primary;
     return Scaffold(
       appBar: AppBar(
         title: TextField(
@@ -55,7 +42,7 @@ class _SearchScreenState extends State<SearchScreen> {
           autofocus: true,
           style: const TextStyle(color: AppTheme.textPrimary),
           decoration: const InputDecoration(
-            hintText: 'Поиск пользователей...',
+            hintText: 'Имя или @username...',
             border: InputBorder.none,
             focusedBorder: InputBorder.none,
             enabledBorder: InputBorder.none,
@@ -65,25 +52,32 @@ class _SearchScreenState extends State<SearchScreen> {
         ),
       ),
       body: _loading
-          ? Center(child: CircularProgressIndicator(color: AppTheme.orange))
+          ? Center(child: CircularProgressIndicator(color: accent))
           : ListView.separated(
               itemCount: _results.length,
-              separatorBuilder: (context, index) => const Divider(height: 1, color: AppTheme.divider),
+              separatorBuilder: (_, __) => const Divider(height: 1, color: AppTheme.divider),
               itemBuilder: (_, i) {
                 final u = _results[i];
                 final name = u['name'] as String;
+                final username = u['username'] as String?;
                 final avatarUrl = u['avatar_url'] as String?;
                 return ListTile(
                   leading: CircleAvatar(
                     backgroundColor: AppTheme.surfaceVariant,
-                    backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                    backgroundImage: avatarUrl != null
+                        ? CachedNetworkImageProvider(avatarUrl, cacheKey: 'u_${u['id']}')
+                        : null,
                     child: avatarUrl == null
-                        ? Text(name[0].toUpperCase(),
-                            style: TextStyle(color: AppTheme.orange))
+                        ? Text(name[0].toUpperCase(), style: TextStyle(color: accent))
                         : null,
                   ),
                   title: Text(name, style: const TextStyle(color: AppTheme.textPrimary)),
-                  onTap: () => _openChat(u['id'] as int, name),
+                  subtitle: username != null
+                      ? Text('@$username', style: TextStyle(color: accent, fontSize: 12))
+                      : null,
+                  onTap: () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => UserProfileScreen(initialData: u),
+                  )),
                 );
               },
             ),

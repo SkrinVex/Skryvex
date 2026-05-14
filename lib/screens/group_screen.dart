@@ -19,6 +19,7 @@ import 'download_sheet.dart';
 import 'reactions_widget.dart';
 import 'media_caption_sheet.dart';
 import 'adaptive_layout.dart';
+import 'user_profile_screen.dart';
 
 class GroupScreen extends StatefulWidget {
   final int groupId;
@@ -682,14 +683,19 @@ class _GroupMessageBubbleState extends State<_GroupMessageBubble>
                   if (!widget.isMe) SizedBox(
                     width: 36,
                     child: widget.showAvatar
-                        ? CircleAvatar(
-                            radius: 16, backgroundColor: AppTheme.surfaceVariant,
-                            backgroundImage: msg.senderAvatar != null
-                                ? CachedNetworkImageProvider(msg.senderAvatar!, cacheKey: 'u_${msg.senderId}')
-                                : null,
-                            child: msg.senderAvatar == null
-                                ? Text((msg.senderName ?? '?')[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600))
-                                : null,
+                        ? GestureDetector(
+                            onTap: () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => UserProfileScreen(userId: msg.senderId),
+                            )),
+                            child: CircleAvatar(
+                              radius: 16, backgroundColor: AppTheme.surfaceVariant,
+                              backgroundImage: msg.senderAvatar != null
+                                  ? CachedNetworkImageProvider(msg.senderAvatar!, cacheKey: 'u_${msg.senderId}')
+                                  : null,
+                              child: msg.senderAvatar == null
+                                  ? Text((msg.senderName ?? '?')[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600))
+                                  : null,
+                            ),
                           )
                         : null,
                   ),
@@ -712,7 +718,12 @@ class _GroupMessageBubbleState extends State<_GroupMessageBubble>
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
                         if (!widget.isMe) Padding(
                           padding: const EdgeInsets.only(bottom: 4),
-                          child: Text(msg.senderName ?? '', style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600)),
+                          child: GestureDetector(
+                            onTap: () => Navigator.push(context, MaterialPageRoute(
+                              builder: (_) => UserProfileScreen(userId: msg.senderId),
+                            )),
+                            child: Text(msg.senderName ?? '', style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600)),
+                          ),
                         ),
                         if (msg.replyToId != null) GestureDetector(
                           onTap: widget.onTapReply,

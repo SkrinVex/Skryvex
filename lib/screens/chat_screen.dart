@@ -19,15 +19,17 @@ import 'download_sheet.dart';
 import 'reactions_widget.dart';
 import 'media_caption_sheet.dart';
 import 'adaptive_layout.dart';
+import 'user_profile_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final int chatId;
   final String partnerName;
   final String? partnerAvatar;
+  final int? partnerId;
   final bool isSelf;
   final bool isSystem;
 
-  const ChatScreen({super.key, required this.chatId, required this.partnerName, this.partnerAvatar, this.isSelf = false, this.isSystem = false});
+  const ChatScreen({super.key, required this.chatId, required this.partnerName, this.partnerAvatar, this.partnerId, this.isSelf = false, this.isSystem = false});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -482,7 +484,13 @@ class _ChatScreenState extends State<ChatScreen> {
       appBar: AppBar(
         scrolledUnderElevation: 0,
         titleSpacing: 0,
-        title: Row(
+        title: GestureDetector(
+          onTap: (!widget.isSelf && !widget.isSystem && widget.partnerId != null)
+              ? () => Navigator.push(context, MaterialPageRoute(
+                    builder: (_) => UserProfileScreen(userId: widget.partnerId),
+                  ))
+              : null,
+          child: Row(
           children: [
             if (widget.isSelf)
               CircleAvatar(
@@ -511,6 +519,7 @@ class _ChatScreenState extends State<ChatScreen> {
             const SizedBox(width: 10),
             Text(widget.isSelf ? 'Избранное' : widget.partnerName),
           ],
+        ),
         ),
         leading: IconButton(
           icon: const Icon(Icons.arrow_back),

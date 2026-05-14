@@ -356,6 +356,7 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
                             chatId: _chats[i].id,
                             partnerName: _chats[i].isSystem ? 'Уведомления' : (_chats[i].isSelf ? 'Избранное' : _chats[i].partnerName),
                             partnerAvatar: _chats[i].partnerAvatar,
+                            partnerId: (!_chats[i].isSelf && !_chats[i].isSystem) ? _chats[i].partnerId : null,
                             isSelf: _chats[i].isSelf,
                             isSystem: _chats[i].isSystem,
                           ),

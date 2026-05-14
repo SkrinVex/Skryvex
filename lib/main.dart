@@ -6,6 +6,7 @@ import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
 import 'screens/group_invite_screen.dart';
 import 'screens/channel_invite_screen.dart';
+import 'screens/user_profile_screen.dart';
 import 'services/app_settings.dart';
 import 'theme.dart';
 
@@ -59,6 +60,11 @@ class _SkryvexAppState extends State<SkryvexApp> {
     } else if (uri.scheme == 'skryvex' && uri.pathSegments.isNotEmpty) {
       if (uri.host == 'invite') inviteCode = uri.pathSegments[0];
       else if (uri.host == 'channel') channelCode = uri.pathSegments[0];
+      else if (uri.host == 'user') {
+        final id = uri.pathSegments[0];
+        _navKey.currentState?.push(MaterialPageRoute(builder: (_) => UserProfileScreen(userId: int.tryParse(id), username: int.tryParse(id) == null ? id : null)));
+        return;
+      }
     }
 
     if (inviteCode != null) {
@@ -100,6 +106,13 @@ class _SkryvexAppState extends State<SkryvexApp> {
           }
           if (uri.pathSegments[0] == 'channel') {
             return MaterialPageRoute(builder: (_) => ChannelInviteScreen(inviteCode: uri.pathSegments[1]));
+          }
+          if (uri.pathSegments[0] == 'u') {
+            final id = uri.pathSegments[1];
+            return MaterialPageRoute(builder: (_) => UserProfileScreen(
+              userId: int.tryParse(id),
+              username: int.tryParse(id) == null ? id : null,
+            ));
           }
         }
         return null;

@@ -20,19 +20,21 @@ class UserModel {
   final String name;
   final String? username;
   final String? avatarUrl;
+  final String? bio;
 
-  const UserModel({required this.id, required this.email, required this.name, this.username, this.avatarUrl});
+  const UserModel({required this.id, required this.email, required this.name, this.username, this.avatarUrl, this.bio});
 
   factory UserModel.fromJson(Map<String, dynamic> j) => UserModel(
         id: j['id'] as int,
-        email: j['email'] as String,
+        email: j['email'] as String? ?? '',
         name: j['name'] as String,
         username: j['username'] as String?,
         avatarUrl: j['avatar_url'] as String?,
+        bio: j['bio'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
-    'id': id, 'email': email, 'name': name, 'username': username, 'avatar_url': avatarUrl,
+    'id': id, 'email': email, 'name': name, 'username': username, 'avatar_url': avatarUrl, 'bio': bio,
   };
 }
 

@@ -25,12 +25,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   late TextEditingController _nameCtrl;
   late TextEditingController _usernameCtrl;
+  late TextEditingController _bioCtrl;
 
   @override
   void initState() {
     super.initState();
     _nameCtrl = TextEditingController();
     _usernameCtrl = TextEditingController();
+    _bioCtrl = TextEditingController();
     _loadUser();
   }
 
@@ -38,6 +40,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
   void dispose() {
     _nameCtrl.dispose();
     _usernameCtrl.dispose();
+    _bioCtrl.dispose();
     super.dispose();
   }
 
@@ -61,6 +64,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _user = u;
     _nameCtrl.text = u.name;
     _usernameCtrl.text = u.username ?? '';
+    _bioCtrl.text = u.bio ?? '';
   }
 
   Future<void> _save() async {
@@ -84,6 +88,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final data = await ApiService.patch('/auth/me', {
         'name': name,
         if (username.isNotEmpty) 'username': username,
+        'bio': _bioCtrl.text.trim(),
       });
       if (data['error'] != null) {
         _showError(data['error'] as String);
@@ -177,6 +182,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         maxLength: 30,
         inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-z0-9_]'))],
         decoration: InputDecoration(hintText: 'username (необязательно)', prefixText: '@', prefixStyle: TextStyle(color: AppTheme.orange), counterText: ''),
+      ),
+      const SizedBox(height: 20),
+      const Text('О себе', style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+      const SizedBox(height: 6),
+      TextField(
+        controller: _bioCtrl,
+        style: const TextStyle(color: AppTheme.textPrimary),
+        maxLength: 300,
+        maxLines: 4,
+        minLines: 2,
+        decoration: const InputDecoration(hintText: 'Расскажите о себе...'),
       ),
     ],
   );
