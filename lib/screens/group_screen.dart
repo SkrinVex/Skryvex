@@ -14,6 +14,7 @@ import '../theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/cache_service.dart';
+import '../services/active_screen.dart';
 import 'media_viewer.dart';
 import 'download_sheet.dart';
 import 'reactions_widget.dart';
@@ -67,6 +68,7 @@ class _GroupScreenState extends State<GroupScreen> {
   @override
   void initState() {
     super.initState();
+    ActiveScreen.instance.groupId = widget.groupId;
     _groupName = widget.groupName;
     _groupAvatar = widget.groupAvatar;
     _msgCtrl.addListener(() {
@@ -439,6 +441,7 @@ class _GroupScreenState extends State<GroupScreen> {
 
   @override
   void dispose() {
+    ActiveScreen.instance.groupId = null;
     _scrollCtrl.removeListener(_onScroll);
     _ws?.sink.close();
     _msgCtrl.dispose();

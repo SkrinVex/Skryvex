@@ -11,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/upload_service.dart';
+import '../services/active_screen.dart';
 import '../theme.dart';
 import 'media_viewer.dart';
 import 'download_sheet.dart';
@@ -53,6 +54,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
   void initState() {
     super.initState();
     _channel = widget.channel;
+    ActiveScreen.instance.channelId = _channel.id;
     _init();
   }
 
@@ -280,6 +282,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
 
   @override
   void dispose() {
+    ActiveScreen.instance.channelId = null;
     _scrollCtrl.removeListener(_onScroll);
     _ws?.sink.close();
     _textCtrl.dispose();

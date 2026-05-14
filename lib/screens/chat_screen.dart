@@ -14,6 +14,7 @@ import '../theme.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/cache_service.dart';
+import '../services/active_screen.dart';
 import 'media_viewer.dart';
 import 'download_sheet.dart';
 import 'reactions_widget.dart';
@@ -64,6 +65,7 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   void initState() {
     super.initState();
+    ActiveScreen.instance.chatId = widget.chatId;
     _msgCtrl.addListener(() {
       final has = _msgCtrl.text.trim().isNotEmpty;
       if (has != _hasText) setState(() => _hasText = has);
@@ -470,6 +472,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    ActiveScreen.instance.chatId = null;
     _scrollCtrl.removeListener(_onScroll);
     _ws?.sink.close();
     _msgCtrl.dispose();

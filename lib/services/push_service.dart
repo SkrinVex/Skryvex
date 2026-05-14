@@ -4,6 +4,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
+import 'local_notifications.dart';
 
 @pragma('vm:entry-point')
 Future<void> _bgHandler(RemoteMessage _) async {}
@@ -22,8 +23,22 @@ class PushService {
       final token = await messaging.getToken();
       if (token != null) await _register(token);
       messaging.onTokenRefresh.listen(_register);
+
+      // Тап на уведомление когда приложение открыто (foreground)
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleMessage);
+
+      // Тап когда приложение было закрыто
+      final initial = await messaging.getInitialMessage();
+      if (initial != null) _handleMessage(initial);
     } catch (e) {
       debugPrint('[PushService] $e');
+    }
+  }
+
+  void _handleMessage(RemoteMessage message) {
+    final payload = message.data['payload'] as String?;
+    if (payload != null) {
+      LocalNotifications.instance.onTap?.call(payload);
     }
   }
 

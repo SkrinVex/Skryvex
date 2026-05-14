@@ -12,6 +12,7 @@ import '../services/app_settings.dart';
 import '../services/cache_service.dart';
 import '../services/push_service.dart';
 import '../services/local_notifications.dart';
+import '../services/active_screen.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'adaptive_layout.dart';
 import 'chat_screen.dart';
@@ -246,6 +247,8 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
   bool get wantKeepAlive => true;
 
   List<ChatModel> _chats = [];
+  List<GroupModel> _groups = [];
+  List<ChannelModel> _channels = [];
   bool _loading = true;
   WebSocketChannel? _ws;
 
@@ -257,39 +260,107 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
 
   Future<void> _connectWs() async {
     if (_ws != null) {
-      // Уже подключены — просто джойнимся в новые чаты
       for (final chat in _chats) {
         _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': chat.id}));
+      }
+      for (final g in _groups) {
+        _ws!.sink.add(jsonEncode({'type': 'join_group', 'groupId': g.id}));
+      }
+      for (final ch in _channels) {
+        _ws!.sink.add(jsonEncode({'type': 'join_channel', 'channelId': ch.id}));
       }
       return;
     }
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('token');
     if (token == null) return;
+
+    // Загружаем группы и каналы для джойна и уведомлений
+    try {
+      final results = await Future.wait([
+        ApiService.get('/groups'),
+        ApiService.get('/channels/subscribed'),
+      ]);
+      _groups = (results[0] as List).map((e) => GroupModel.fromJson(e as Map<String, dynamic>)).toList();
+      _channels = (results[1] as List).map((e) => ChannelModel.fromJson(e as Map<String, dynamic>)).toList();
+    } catch (_) {}
+
     _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
     _ws!.stream.listen((raw) {
       final msg = jsonDecode(raw as String) as Map<String, dynamic>;
+
       if (msg['type'] == 'message' || msg['type'] == 'system_chat_message') {
-        // Локальное уведомление на Linux (на Android пуши приходят через FCM)
         if (!kIsWeb && Platform.isLinux) {
-          final senderName = msg['sender_name'] as String?;
-          final text = msg['text'] as String?;
-          final mediaType = msg['media_type'] as String?;
-          if (senderName != null) {
-            final body = text?.isNotEmpty == true
-                ? text!
-                : mediaType == 'image' ? '📷 Фото' : mediaType == 'video' ? '🎥 Видео' : '...';
-            LocalNotifications.instance.show(title: senderName, body: body);
+          final chatId = msg['chat_id'] as int?;
+          if (chatId != null && !ActiveScreen.instance.isChatActive(chatId)) {
+            final senderName = msg['sender_name'] as String?;
+            final text = msg['text'] as String?;
+            final mediaType = msg['media_type'] as String?;
+            if (senderName != null) {
+              final body = text?.isNotEmpty == true ? text! : mediaType == 'image' ? '📷 Фото' : mediaType == 'video' ? '🎥 Видео' : '...';
+              final chat = _chats.where((c) => c.id == chatId).firstOrNull;
+              LocalNotifications.instance.show(
+                title: senderName, body: body,
+                payload: 'chat:$chatId', avatarUrl: chat?.partnerAvatar,
+              );
+            }
           }
         }
         _refreshChatsBackground();
       }
+
+      if (msg['type'] == 'group_message') {
+        if (!kIsWeb && Platform.isLinux) {
+          final groupId = msg['group_id'] as int?;
+          if (groupId != null && !ActiveScreen.instance.isGroupActive(groupId)) {
+            final senderName = msg['sender_name'] as String?;
+            final text = msg['text'] as String?;
+            final mediaType = msg['media_type'] as String?;
+            if (senderName != null) {
+              final body = text?.isNotEmpty == true ? text! : mediaType == 'image' ? '📷 Фото' : mediaType == 'video' ? '🎥 Видео' : '...';
+              final group = _groups.where((g) => g.id == groupId).firstOrNull;
+              LocalNotifications.instance.show(
+                title: '${group?.name ?? 'Группа'}: $senderName',
+                body: body,
+                payload: 'group:$groupId',
+                avatarUrl: group?.avatarUrl,
+              );
+            }
+          }
+        }
+      }
+
+      if (msg['type'] == 'channel_post') {
+        if (!kIsWeb && Platform.isLinux) {
+          final channelId = msg['channel_id'] as int?;
+          if (channelId != null && !ActiveScreen.instance.isChannelActive(channelId)) {
+            final text = msg['text'] as String?;
+            final mediaType = msg['media_type'] as String?;
+            final body = text?.isNotEmpty == true ? text! : mediaType == 'image' ? '📷 Фото' : mediaType == 'video' ? '🎥 Видео' : 'Новый пост';
+            final channel = _channels.where((c) => c.id == channelId).firstOrNull;
+            LocalNotifications.instance.show(
+              title: channel?.name ?? 'Канал',
+              body: body,
+              payload: 'channel:$channelId',
+              avatarUrl: channel?.avatarUrl,
+            );
+          }
+        }
+      }
+
       if (msg['type'] == 'group_request_accepted' || msg['type'] == 'group_request_rejected') {
         _refreshChatsBackground();
       }
     }, onError: (_) {}, onDone: () {});
+
     for (final chat in _chats) {
       _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': chat.id}));
+    }
+    for (final g in _groups) {
+      _ws!.sink.add(jsonEncode({'type': 'join_group', 'groupId': g.id}));
+    }
+    for (final ch in _channels) {
+      _ws!.sink.add(jsonEncode({'type': 'join_channel', 'channelId': ch.id}));
     }
   }
 

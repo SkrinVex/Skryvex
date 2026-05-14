@@ -5,14 +5,19 @@ import 'package:app_links/app_links.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'screens/login_screen.dart';
 import 'screens/home_screen.dart';
+import 'screens/chat_screen.dart';
+import 'screens/group_screen.dart';
+import 'screens/channel_screen.dart';
 import 'screens/group_invite_screen.dart';
 import 'screens/channel_invite_screen.dart';
 import 'screens/user_profile_screen.dart';
 import 'screens/update_screen.dart';
 import 'services/app_settings.dart';
 import 'services/app_state.dart';
+import 'services/api_service.dart';
 import 'services/push_service.dart';
 import 'services/local_notifications.dart';
+import 'models/models.dart';
 import 'theme.dart';
 
 void main() async {
@@ -47,6 +52,65 @@ class _SkryvexAppState extends State<SkryvexApp> {
     AppSettings.instance.addListener(_rebuild);
     AppState.instance.addListener(_rebuild);
     _initDeepLinks();
+    LocalNotifications.instance.init(onTap: _handleNotificationTap);
+  }
+
+  void _handleNotificationTap(String payload) {
+    final parts = payload.split(':');
+    if (parts.length != 2) return;
+    final type = parts[0];
+    final id = int.tryParse(parts[1]);
+    if (id == null) return;
+    // Навигация по типу
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (type == 'chat') {
+        // Нужно получить данные чата для открытия ChatScreen
+        _openChatById(id);
+      } else if (type == 'group') {
+        _openGroupById(id);
+      } else if (type == 'channel') {
+        _openChannelById(id);
+      }
+    });
+  }
+
+  Future<void> _openChatById(int chatId) async {
+    try {
+      final data = await ApiService.get('/chats') as List;
+      final chatJson = data.cast<Map<String, dynamic>>().firstWhere(
+        (c) => c['id'] == chatId, orElse: () => {},
+      );
+      if (chatJson.isEmpty) return;
+      _navKey.currentState?.push(MaterialPageRoute(builder: (_) => ChatScreen(
+        chatId: chatId,
+        partnerName: chatJson['partner_name'] as String? ?? '',
+        partnerAvatar: chatJson['partner_avatar'] as String?,
+        partnerId: chatJson['partner_id'] as int?,
+        isSelf: chatJson['is_self'] as bool? ?? false,
+        isSystem: chatJson['is_system'] as bool? ?? false,
+      )));
+    } catch (_) {}
+  }
+
+  Future<void> _openGroupById(int groupId) async {
+    try {
+      final data = await ApiService.get('/groups/$groupId') as Map<String, dynamic>;
+      _navKey.currentState?.push(MaterialPageRoute(builder: (_) => GroupScreen(
+        groupId: groupId,
+        groupName: data['name'] as String? ?? '',
+        groupAvatar: data['avatar_url'] as String?,
+        isOwner: data['role'] == 'owner',
+      )));
+    } catch (_) {}
+  }
+
+  Future<void> _openChannelById(int channelId) async {
+    try {
+      final data = await ApiService.get('/channels/$channelId') as Map<String, dynamic>;
+      _navKey.currentState?.push(MaterialPageRoute(builder: (_) => ChannelScreen(
+        channel: ChannelModel.fromJson(data),
+      )));
+    } catch (_) {}
   }
 
   void _initDeepLinks() {
