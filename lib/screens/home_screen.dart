@@ -427,7 +427,7 @@ class _ChatTile extends StatelessWidget {
                 backgroundColor: accent.withValues(alpha: 0.15),
                 child: Icon(Icons.notifications, color: accent, size: 22),
               )
-            : _Avatar(name: chat.partnerName, url: chat.partnerAvatar, cacheKey: 'avatar_${chat.partnerId}');
+            : _Avatar(name: chat.partnerName, url: chat.partnerAvatar, cacheKey: chat.partnerAvatar);
 
     final title = chat.isSelf ? 'Избранное' : chat.isSystem ? 'Уведомления' : chat.partnerName;
 
@@ -770,7 +770,7 @@ class _ChannelTile extends StatelessWidget {
       leading: CircleAvatar(
         radius: 24, backgroundColor: AppTheme.surfaceVariant,
         backgroundImage: channel.avatarUrl != null
-            ? CachedNetworkImageProvider(channel.avatarUrl!, cacheKey: 'ch_avatar_${channel.id}')
+            ? CachedNetworkImageProvider(channel.avatarUrl!, cacheKey: channel.avatarUrl)
             : null,
         child: channel.avatarUrl == null
             ? Text(channel.name[0].toUpperCase(), style: TextStyle(color: accent, fontWeight: FontWeight.w600))
@@ -819,7 +819,7 @@ class _GroupTile extends StatelessWidget {
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       leading: CircleAvatar(
         radius: 24, backgroundColor: AppTheme.surfaceVariant,
-        backgroundImage: group.avatarUrl != null ? CachedNetworkImageProvider(group.avatarUrl!, cacheKey: 'group_${group.id}') : null,
+        backgroundImage: group.avatarUrl != null ? CachedNetworkImageProvider(group.avatarUrl!, cacheKey: group.avatarUrl) : null,
         child: group.avatarUrl == null
             ? Text(group.name[0].toUpperCase(), style: TextStyle(color: accent, fontWeight: FontWeight.w600))
             : null,

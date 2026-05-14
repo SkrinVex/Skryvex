@@ -138,7 +138,7 @@ class _GroupInviteScreenState extends State<GroupInviteScreen> {
         CircleAvatar(
           radius: 48, backgroundColor: AppTheme.surfaceVariant,
           backgroundImage: _group!.avatarUrl != null
-              ? CachedNetworkImageProvider(_group!.avatarUrl!, cacheKey: 'group_${_group!.id}')
+              ? CachedNetworkImageProvider(_group!.avatarUrl!, cacheKey: _group!.avatarUrl)
               : null,
           child: _group!.avatarUrl == null
               ? Text(_group!.name[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 32, fontWeight: FontWeight.w600))

@@ -127,7 +127,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
             radius: 52,
             backgroundColor: AppTheme.surfaceVariant,
             backgroundImage: avatarUrl != null
-                ? CachedNetworkImageProvider(avatarUrl, cacheKey: 'u_profile_${_data!['id']}')
+                ? CachedNetworkImageProvider(avatarUrl, cacheKey: avatarUrl)
                 : null,
             child: avatarUrl == null
                 ? Text(name[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 36, fontWeight: FontWeight.w600))

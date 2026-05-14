@@ -78,7 +78,7 @@ class _ChannelInviteScreenState extends State<ChannelInviteScreen> {
                       CircleAvatar(
                         radius: 48, backgroundColor: AppTheme.surfaceVariant,
                         backgroundImage: _channel!.avatarUrl != null
-                            ? CachedNetworkImageProvider(_channel!.avatarUrl!, cacheKey: 'ch_inv_${_channel!.id}')
+                            ? CachedNetworkImageProvider(_channel!.avatarUrl!, cacheKey: _channel!.avatarUrl)
                             : null,
                         child: _channel!.avatarUrl == null
                             ? Text(_channel!.name[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 32, fontWeight: FontWeight.w600))

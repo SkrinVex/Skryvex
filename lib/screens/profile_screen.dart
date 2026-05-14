@@ -119,8 +119,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final data = await ApiService.uploadFile('/auth/me/avatar', bytes, file.name);
       if (data['error'] != null) { _showError(data['error'] as String); return; }
       final u = UserModel.fromJson(data);
-      // Инвалидируем старый кеш аватара
-      await CachedNetworkImage.evictFromCache('avatar_me');
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('user', jsonEncode(u.toJson()));
       if (mounted) setState(() => _user = u);
@@ -147,7 +145,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
               radius: 48,
               backgroundColor: AppTheme.surfaceVariant,
               backgroundImage: _user?.avatarUrl != null
-                  ? CachedNetworkImageProvider(_user!.avatarUrl!, cacheKey: 'avatar_me')
+                  ? CachedNetworkImageProvider(_user!.avatarUrl!, cacheKey: _user!.avatarUrl)
                   : null,
               child: _user?.avatarUrl == null
                   ? Text(_user?.name.isNotEmpty == true ? _user!.name[0].toUpperCase() : '?',

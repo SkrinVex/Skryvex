@@ -197,7 +197,7 @@ class _EditChannelScreenState extends State<EditChannelScreen> {
             child: Stack(children: [
               CircleAvatar(
                 radius: 44, backgroundColor: AppTheme.surfaceVariant,
-                backgroundImage: _avatarUrl != null ? CachedNetworkImageProvider(_avatarUrl!, cacheKey: 'ch_avatar_${widget.channel.id}') : null,
+                backgroundImage: _avatarUrl != null ? CachedNetworkImageProvider(_avatarUrl!, cacheKey: _avatarUrl) : null,
                 child: _avatarUrl == null ? Icon(Icons.camera_alt, color: accent, size: 28) : null,
               ),
               Positioned(bottom: 0, right: 0, child: Container(

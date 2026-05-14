@@ -65,7 +65,7 @@ class _SearchScreenState extends State<SearchScreen> {
                   leading: CircleAvatar(
                     backgroundColor: AppTheme.surfaceVariant,
                     backgroundImage: avatarUrl != null
-                        ? CachedNetworkImageProvider(avatarUrl, cacheKey: 'u_${u['id']}')
+                        ? CachedNetworkImageProvider(avatarUrl, cacheKey: avatarUrl)
                         : null,
                     child: avatarUrl == null
                         ? Text(name[0].toUpperCase(), style: TextStyle(color: accent))

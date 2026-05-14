@@ -459,7 +459,7 @@ class _GroupScreenState extends State<GroupScreen> {
         title: Row(children: [
           CircleAvatar(
             radius: 18, backgroundColor: AppTheme.surfaceVariant,
-            backgroundImage: _groupAvatar != null ? CachedNetworkImageProvider(_groupAvatar!, cacheKey: 'group_${widget.groupId}') : null,
+            backgroundImage: _groupAvatar != null ? CachedNetworkImageProvider(_groupAvatar!, cacheKey: _groupAvatar) : null,
             child: _groupAvatar == null
                 ? Text(_groupName.isNotEmpty ? _groupName[0].toUpperCase() : '?',
                     style: TextStyle(color: accent, fontSize: 14, fontWeight: FontWeight.w600))
@@ -690,7 +690,7 @@ class _GroupMessageBubbleState extends State<_GroupMessageBubble>
                             child: CircleAvatar(
                               radius: 16, backgroundColor: AppTheme.surfaceVariant,
                               backgroundImage: msg.senderAvatar != null
-                                  ? CachedNetworkImageProvider(msg.senderAvatar!, cacheKey: 'u_${msg.senderId}')
+                                  ? CachedNetworkImageProvider(msg.senderAvatar!, cacheKey: msg.senderAvatar)
                                   : null,
                               child: msg.senderAvatar == null
                                   ? Text((msg.senderName ?? '?')[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600))

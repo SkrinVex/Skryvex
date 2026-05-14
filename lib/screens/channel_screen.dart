@@ -336,7 +336,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
           CircleAvatar(
             radius: 18, backgroundColor: AppTheme.surfaceVariant,
             backgroundImage: _channel.avatarUrl != null
-                ? CachedNetworkImageProvider(_channel.avatarUrl!, cacheKey: 'ch_avatar_${_channel.id}')
+                ? CachedNetworkImageProvider(_channel.avatarUrl!, cacheKey: _channel.avatarUrl)
                 : null,
             child: _channel.avatarUrl == null
                 ? Text(_channel.name[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 14, fontWeight: FontWeight.w600))
@@ -463,7 +463,7 @@ class _PostCard extends StatelessWidget {
               CircleAvatar(
                 radius: 16, backgroundColor: AppTheme.surfaceVariant,
                 backgroundImage: channel.avatarUrl != null
-                    ? CachedNetworkImageProvider(channel.avatarUrl!, cacheKey: 'ch_avatar_${channel.id}')
+                    ? CachedNetworkImageProvider(channel.avatarUrl!, cacheKey: channel.avatarUrl)
                     : null,
                 child: channel.avatarUrl == null
                     ? Text(channel.name[0].toUpperCase(), style: TextStyle(color: accent, fontSize: 12, fontWeight: FontWeight.w600))

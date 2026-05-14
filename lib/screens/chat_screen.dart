@@ -509,7 +509,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 radius: 18,
                 backgroundColor: AppTheme.surfaceVariant,
                 backgroundImage: widget.partnerAvatar != null
-                    ? CachedNetworkImageProvider(widget.partnerAvatar!, cacheKey: 'avatar_${widget.chatId}_partner')
+                    ? CachedNetworkImageProvider(widget.partnerAvatar!, cacheKey: widget.partnerAvatar)
                     : null,
                 child: widget.partnerAvatar == null
                     ? Text(widget.partnerName.isNotEmpty ? widget.partnerName[0].toUpperCase() : '?',
