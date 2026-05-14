@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
+import '../services/push_service.dart';
 import 'adaptive_layout.dart';
 import 'register_screen.dart';
 import 'verify_screen.dart';
@@ -38,6 +39,7 @@ class _LoginScreenState extends State<LoginScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', res['token'] as String);
         await prefs.setString('user', jsonEncode(res['user']));
+        await PushService.instance.init();
         if (mounted) Navigator.pushReplacementNamed(context, '/home');
       } else if (res['error'] == 'Email не подтверждён') {
         if (mounted) {

@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
@@ -8,6 +10,8 @@ import '../models/models.dart';
 import '../services/api_service.dart';
 import '../services/app_settings.dart';
 import '../services/cache_service.dart';
+import '../services/push_service.dart';
+import '../services/local_notifications.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'adaptive_layout.dart';
 import 'chat_screen.dart';
@@ -265,7 +269,21 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
     _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
     _ws!.stream.listen((raw) {
       final msg = jsonDecode(raw as String) as Map<String, dynamic>;
-      if (msg['type'] == 'message' || msg['type'] == 'system_chat_message') _refreshChatsBackground();
+      if (msg['type'] == 'message' || msg['type'] == 'system_chat_message') {
+        // Локальное уведомление на Linux (на Android пуши приходят через FCM)
+        if (!kIsWeb && Platform.isLinux) {
+          final senderName = msg['sender_name'] as String?;
+          final text = msg['text'] as String?;
+          final mediaType = msg['media_type'] as String?;
+          if (senderName != null) {
+            final body = text?.isNotEmpty == true
+                ? text!
+                : mediaType == 'image' ? '📷 Фото' : mediaType == 'video' ? '🎥 Видео' : '...';
+            LocalNotifications.instance.show(title: senderName, body: body);
+          }
+        }
+        _refreshChatsBackground();
+      }
       if (msg['type'] == 'group_request_accepted' || msg['type'] == 'group_request_rejected') {
         _refreshChatsBackground();
       }
@@ -942,6 +960,7 @@ class _SettingsTab extends StatelessWidget {
       ),
     );
     if (confirm == true) {
+      await PushService.instance.deleteToken();
       final prefs = await SharedPreferences.getInstance();
       await prefs.clear();
       if (context.mounted) Navigator.pushReplacementNamed(context, '/login');

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme.dart';
 import '../services/api_service.dart';
+import '../services/push_service.dart';
 import 'adaptive_layout.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:convert';
@@ -30,6 +31,7 @@ class _VerifyScreenState extends State<VerifyScreen> {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('token', res['token'] as String);
         await prefs.setString('user', jsonEncode(res['user']));
+        await PushService.instance.init();
         if (mounted) Navigator.pushNamedAndRemoveUntil(context, '/home', (_) => false);
       } else {
         setState(() => _error = res['error'] as String? ?? 'Неверный код');

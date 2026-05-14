@@ -11,6 +11,8 @@ import 'screens/user_profile_screen.dart';
 import 'screens/update_screen.dart';
 import 'services/app_settings.dart';
 import 'services/app_state.dart';
+import 'services/push_service.dart';
+import 'services/local_notifications.dart';
 import 'theme.dart';
 
 void main() async {
@@ -21,6 +23,8 @@ void main() async {
   final token = prefs.getString('token');
   final info = await PackageInfo.fromPlatform();
   final healthy = await AppState.instance.checkHealth(currentVersion: info.version);
+  if (token != null) await PushService.instance.init();
+  await LocalNotifications.instance.init();
   runApp(SkryvexApp(
     initialRoute: (!healthy || token == null) ? '/login' : '/home',
   ));

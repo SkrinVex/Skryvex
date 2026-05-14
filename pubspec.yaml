@@ -32,6 +32,9 @@ dependencies:
   package_info_plus: ^9.0.1
   open_file: ^3.5.11
   archive: ^4.0.9
+  firebase_core: ^3.0.0
+  firebase_messaging: ^15.0.0
+  flutter_local_notifications: ^18.0.0
 
 dev_dependencies:
   flutter_test:
