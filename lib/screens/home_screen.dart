@@ -251,6 +251,7 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
   List<ChannelModel> _channels = [];
   bool _loading = true;
   WebSocketChannel? _ws;
+  Timer? _reconnectTimer;
 
   @override
   void initState() {
@@ -286,8 +287,7 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
     } catch (_) {}
 
     _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
-    _ws!.stream.listen((raw) {
-      final msg = jsonDecode(raw as String) as Map<String, dynamic>;
+    _ws!.stream.listen((raw) {      final msg = jsonDecode(raw as String) as Map<String, dynamic>;
 
       if (msg['type'] == 'message' || msg['type'] == 'system_chat_message') {
         if (!kIsWeb && Platform.isLinux) {
@@ -352,7 +352,7 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
       if (msg['type'] == 'group_request_accepted' || msg['type'] == 'group_request_rejected') {
         _refreshChatsBackground();
       }
-    }, onError: (_) {}, onDone: () {});
+    }, onError: (_) => _scheduleReconnect(), onDone: _scheduleReconnect);
 
     for (final chat in _chats) {
       _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': chat.id}));
@@ -365,8 +365,18 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
     }
   }
 
+  void _scheduleReconnect() {
+    if (!mounted) return;
+    _ws = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 3), () {
+      if (mounted) _connectWs();
+    });
+  }
+
   @override
   void dispose() {
+    _reconnectTimer?.cancel();
     _ws?.sink.close();
     super.dispose();
   }

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
@@ -36,6 +37,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
   late ChannelModel _channel;
   final Map<int, GlobalKey> _postKeys = {};
   WebSocketChannel? _ws;
+  Timer? _reconnectTimer;
   int? _myId;
   bool _loading = true;
   bool _loadingMore = false;
@@ -73,7 +75,7 @@ class _ChannelScreenState extends State<ChannelScreen> {
     if (token != null) {
       _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
       _ws!.sink.add(jsonEncode({'type': 'join_channel', 'channelId': _channel.id}));
-      _ws!.stream.listen(_onWs, onError: (_) {}, onDone: () {});
+      _ws!.stream.listen(_onWs, onError: (_) => _scheduleReconnect(), onDone: _scheduleReconnect);
     }
   }
 
@@ -282,9 +284,25 @@ class _ChannelScreenState extends State<ChannelScreen> {
     }
   }
 
+  void _scheduleReconnect() {
+    if (!mounted) return;
+    _ws = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 3), () async {
+      if (!mounted) return;
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+      _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
+      _ws!.sink.add(jsonEncode({'type': 'join_channel', 'channelId': _channel.id}));
+      _ws!.stream.listen(_onWs, onError: (_) => _scheduleReconnect(), onDone: _scheduleReconnect);
+    });
+  }
+
   @override
   void dispose() {
     ActiveScreen.instance.channelId = null;
+    _reconnectTimer?.cancel();
     _scrollCtrl.removeListener(_onScroll);
     _ws?.sink.close();
     _textCtrl.dispose();

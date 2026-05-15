@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -43,6 +44,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
   final List<MessageModel> _messages = [];
   WebSocketChannel? _ws;
+  Timer? _reconnectTimer;
   int? _myId;
   bool _loading = true;
   bool _loadingMore = false;
@@ -108,7 +110,7 @@ class _ChatScreenState extends State<ChatScreen> {
     if (token != null) {
       _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
       _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': widget.chatId}));
-      _ws!.stream.listen(_onWsMessage, onError: (_) {}, onDone: () {});
+      _ws!.stream.listen(_onWsMessage, onError: (_) => _scheduleReconnect(), onDone: _scheduleReconnect);
     }
   }
 
@@ -472,9 +474,25 @@ class _ChatScreenState extends State<ChatScreen> {
     if (mounted) _pickAndSendMedia(source, video: video);
   }
 
+  void _scheduleReconnect() {
+    if (!mounted) return;
+    _ws = null;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = Timer(const Duration(seconds: 3), () async {
+      if (!mounted) return;
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString('token');
+      if (token == null) return;
+      _ws = WebSocketChannel.connect(Uri.parse('${ApiService.wsBase}?token=$token'));
+      _ws!.sink.add(jsonEncode({'type': 'join', 'chatId': widget.chatId}));
+      _ws!.stream.listen(_onWsMessage, onError: (_) => _scheduleReconnect(), onDone: _scheduleReconnect);
+    });
+  }
+
   @override
   void dispose() {
     ActiveScreen.instance.chatId = null;
+    _reconnectTimer?.cancel();
     _scrollCtrl.removeListener(_onScroll);
     _ws?.sink.close();
     _msgCtrl.dispose();
