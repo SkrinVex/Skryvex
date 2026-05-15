@@ -6,8 +6,33 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'api_service.dart';
 import 'local_notifications.dart';
 
+/// Payload из FCM data-only сообщения, ожидающий обработки навигации.
+/// Устанавливается при cold-start до того, как виджет зарегистрировал onTap.
+String? pendingNavigationPayload;
+
 @pragma('vm:entry-point')
-Future<void> _bgHandler(RemoteMessage _) async {}
+Future<void> _bgHandler(RemoteMessage message) async {
+  // Data-only сообщение: приложение в фоне/закрыто — показываем уведомление сами
+  await Firebase.initializeApp();
+  await LocalNotifications.instance.init();
+  final data = message.data;
+  final title = data['title'] as String?;
+  final body = data['body'] as String?;
+  final payload = data['payload'] as String?;
+  if (title != null && body != null && payload != null) {
+    await LocalNotifications.instance.show(
+      title: title,
+      body: body,
+      payload: payload,
+      avatarUrl: data['avatarUrl'] as String?,
+      senderName: _isSenderNameNeeded(payload, data) ? data['senderName'] as String? : null,
+    );
+  }
+}
+
+bool _isSenderNameNeeded(String payload, Map<String, dynamic> data) {
+  return payload.startsWith('group:') && data['senderName'] != null;
+}
 
 class PushService {
   PushService._();
@@ -24,10 +49,13 @@ class PushService {
       if (token != null) await _register(token);
       messaging.onTokenRefresh.listen(_register);
 
-      // Тап на уведомление когда приложение открыто (foreground)
+      // Foreground: data-only сообщения не показываются FCM автоматически — показываем сами
+      FirebaseMessaging.onMessage.listen(_showForegroundNotification);
+
+      // Тап когда приложение было в фоне (не закрыто)
       FirebaseMessaging.onMessageOpenedApp.listen(_handleMessage);
 
-      // Тап когда приложение было закрыто
+      // Тап когда приложение было закрыто (cold start)
       final initial = await messaging.getInitialMessage();
       if (initial != null) _handleMessage(initial);
     } catch (e) {
@@ -35,10 +63,29 @@ class PushService {
     }
   }
 
+  void _showForegroundNotification(RemoteMessage message) {
+    final data = message.data;
+    final title = data['title'] as String?;
+    final body = data['body'] as String?;
+    final payload = data['payload'] as String?;
+    if (title == null || body == null || payload == null) return;
+    LocalNotifications.instance.show(
+      title: title,
+      body: body,
+      payload: payload,
+      avatarUrl: data['avatarUrl'] as String?,
+      senderName: _isSenderNameNeeded(payload, data) ? data['senderName'] as String? : null,
+    );
+  }
+
   void _handleMessage(RemoteMessage message) {
     final payload = message.data['payload'] as String?;
-    if (payload != null) {
-      LocalNotifications.instance.onTap?.call(payload);
+    if (payload == null) return;
+    if (LocalNotifications.instance.onTap != null) {
+      LocalNotifications.instance.onTap!(payload);
+    } else {
+      // onTap ещё не зарегистрирован (cold start) — сохраняем для последующей обработки
+      pendingNavigationPayload = payload;
     }
   }
 

@@ -53,6 +53,12 @@ class _SkryvexAppState extends State<SkryvexApp> {
     AppState.instance.addListener(_rebuild);
     _initDeepLinks();
     LocalNotifications.instance.init(onTap: _handleNotificationTap);
+    // Обрабатываем payload от cold-start тапа на уведомление
+    final pending = pendingNavigationPayload;
+    if (pending != null) {
+      pendingNavigationPayload = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _handleNotificationTap(pending));
+    }
   }
 
   void _handleNotificationTap(String payload) {
@@ -76,11 +82,7 @@ class _SkryvexAppState extends State<SkryvexApp> {
 
   Future<void> _openChatById(int chatId) async {
     try {
-      final data = await ApiService.get('/chats') as List;
-      final chatJson = data.cast<Map<String, dynamic>>().firstWhere(
-        (c) => c['id'] == chatId, orElse: () => {},
-      );
-      if (chatJson.isEmpty) return;
+      final chatJson = await ApiService.get('/chats/$chatId') as Map<String, dynamic>;
       _navKey.currentState?.push(MaterialPageRoute(builder: (_) => ChatScreen(
         chatId: chatId,
         partnerName: chatJson['partner_name'] as String? ?? '',

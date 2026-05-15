@@ -140,6 +140,8 @@ class _GroupScreenState extends State<GroupScreen> {
           if (wasUploading) { _uploading = false; _uploadProgress = 0; _uploadPreviewBytes = null; }
         });
         _scrollToBottom();
+        // Помечаем как прочитанное — мы в группе
+        ApiService.post('/groups/${widget.groupId}/read', {}, auth: true).catchError((_) => <String, dynamic>{});
       }
     }
     if (msg['type'] == 'group_message_deleted') {

@@ -181,6 +181,8 @@ class _ChatScreenState extends State<ChatScreen> {
         _scrollToBottom();
         CacheService.invalidateMessages(widget.chatId);
         CacheService.invalidateChats();
+        // Помечаем как прочитанное — мы в чате
+        ApiService.post('/chats/${widget.chatId}/read', {}, auth: true).catchError((_) => <String, dynamic>{});
       }
     }
     if (msg['type'] == 'message_deleted') {

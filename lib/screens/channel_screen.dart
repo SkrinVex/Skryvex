@@ -120,6 +120,8 @@ class _ChannelScreenState extends State<ChannelScreen> {
             _scrollCtrl.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
           }
         });
+        // Помечаем как прочитанное — мы в канале
+        ApiService.post('/channels/${_channel.id}/read', {}, auth: true).catchError((_) => <String, dynamic>{});
       }
     }
     if (msg['type'] == 'channel_post_deleted') {

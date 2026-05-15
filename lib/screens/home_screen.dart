@@ -320,10 +320,11 @@ class _ChatsTabState extends State<_ChatsTab> with AutomaticKeepAliveClientMixin
               final body = text?.isNotEmpty == true ? text! : mediaType == 'image' ? '📷 Фото' : mediaType == 'video' ? '🎥 Видео' : '...';
               final group = _groups.where((g) => g.id == groupId).firstOrNull;
               LocalNotifications.instance.show(
-                title: '${group?.name ?? 'Группа'}: $senderName',
+                title: group?.name ?? 'Группа',
                 body: body,
                 payload: 'group:$groupId',
                 avatarUrl: group?.avatarUrl,
+                senderName: senderName,
               );
             }
           }

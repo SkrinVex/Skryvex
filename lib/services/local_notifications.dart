@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
 
-// Payload для навигации: "chat:123", "group:456", "channel:789"
 typedef NotificationTapCallback = void Function(String payload);
 
 class LocalNotifications {
@@ -18,17 +17,19 @@ class LocalNotifications {
   static bool get _supported => !kIsWeb && (Platform.isLinux || Platform.isAndroid);
 
   Future<void> init({NotificationTapCallback? onTap}) async {
-    if (!_supported || _initialized) return;
-    this.onTap = onTap;
-    final settings = InitializationSettings(
-      android: const AndroidInitializationSettings('@mipmap/ic_launcher'),
-      linux: const LinuxInitializationSettings(defaultActionName: 'Открыть'),
+    if (!_supported) return;
+    if (onTap != null) this.onTap = onTap;
+    if (_initialized) return;
+    const settings = InitializationSettings(
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+      linux: LinuxInitializationSettings(defaultActionName: 'Открыть'),
     );
     await _plugin.initialize(
       settings,
       onDidReceiveNotificationResponse: (r) {
         if (r.payload != null) this.onTap?.call(r.payload!);
       },
+      onDidReceiveBackgroundNotificationResponse: _onBackgroundTap,
     );
     _initialized = true;
   }
@@ -38,25 +39,39 @@ class LocalNotifications {
     required String body,
     required String payload,
     String? avatarUrl,
+    String? senderName, // только для групп: имя отправителя
   }) async {
     if (!_supported || !_initialized) return;
 
     Uint8List? avatarBytes;
-    if (avatarUrl != null) {
+    if (avatarUrl != null && avatarUrl.isNotEmpty) {
       try {
         final res = await http.get(Uri.parse(avatarUrl)).timeout(const Duration(seconds: 3));
         if (res.statusCode == 200) avatarBytes = res.bodyBytes;
       } catch (_) {}
     }
 
+    final largeIcon = avatarBytes != null ? ByteArrayAndroidBitmap(avatarBytes) : null;
+    final senderIcon = avatarBytes != null ? ByteArrayAndroidIcon(avatarBytes) : null;
+
     final androidDetails = AndroidNotificationDetails(
       'messages', 'Сообщения',
       importance: Importance.high,
       priority: Priority.high,
-      largeIcon: avatarBytes != null ? ByteArrayAndroidBitmap(avatarBytes) : null,
-      styleInformation: avatarBytes != null
-          ? BigPictureStyleInformation(ByteArrayAndroidBitmap(avatarBytes), hideExpandedLargeIcon: true)
-          : null,
+      icon: '@mipmap/ic_launcher',
+      largeIcon: largeIcon,
+      styleInformation: MessagingStyleInformation(
+        const Person(name: 'Вы'),
+        conversationTitle: title,
+        groupConversation: senderName != null,
+        messages: [
+          Message(
+            body,
+            DateTime.now(),
+            Person(name: senderName ?? title, icon: senderIcon),
+          ),
+        ],
+      ),
     );
 
     await _plugin.show(
@@ -70,4 +85,9 @@ class LocalNotifications {
       payload: payload,
     );
   }
+}
+
+@pragma('vm:entry-point')
+void _onBackgroundTap(NotificationResponse response) {
+  // Handled when app resumes via onDidReceiveNotificationResponse
 }
